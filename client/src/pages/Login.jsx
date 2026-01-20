@@ -45,7 +45,7 @@ const Login = () => {
             <Card variant="outlined" sx={{ p: 2, maxWidth: 400, width: '100%' }}>
                 <CardContent>
                     <Box textAlign="center" mb={3}>
-                        <Typography variant="h4">Login</Typography>
+                        <Typography variant="h4" sx={{ color: "red" }}>Login</Typography>
                         <Typography color="textSecondary">E-Serbisyo Portal</Typography>
                     </Box>
 
