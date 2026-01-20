@@ -98,6 +98,17 @@ const Register = () => {
                             <Grid item xs={12}>
                                 <TextField fullWidth type="password" label="Password" name="password" required onChange={handleChange} />
                             </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField 
+                                    fullWidth 
+                                    type="date" 
+                                    label="Date of Birth" 
+                                    name="date_of_birth" 
+                                    InputLabelProps={{ shrink: true }} 
+                                    required 
+                                    onChange={handleChange} 
+                                />
+                            </Grid>
                         </Grid>
 
                         <Button 
