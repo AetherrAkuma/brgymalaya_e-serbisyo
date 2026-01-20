@@ -38,7 +38,7 @@ const ResidentLayout = () => {
     return (
         <Box sx={{ display: 'flex' }}>
             {/* Top Navigation Bar */}
-            <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
+            <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1,  backgroundColor: '#10e03d' }}>
                 <Toolbar>
                     <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
                         E-Serbisyo: Barangay Malaya

@@ -67,6 +67,9 @@ const Login = () => {
                         >
                             Login
                         </Button>
+                        {/* <Link to="/register" variant="body2" display="block" textAlign="center" sx={{ mt: 2 }}>
+                            Don't have an account? Register
+                        </Link> */}
                     </form>
                 </CardContent>
             </Card>
