@@ -48,7 +48,58 @@ export const registerResident = async (req, res) => {
     }
 };
 
-// Placeholder for Login (We will add this next)
+// Add this import at the top if it's missing (should be there already)
+// import jwt from 'jsonwebtoken';
+
 export const loginUser = async (req, res) => {
-    res.json({ message: "Login logic coming soon" });
+    const { email_address, password } = req.body;
+
+    let conn;
+    try {
+        conn = await getConnection();
+
+        // 1. Find User
+        const rows = await conn.query("SELECT * FROM tbl_Residents WHERE email_address = ?", [email_address]);
+        
+        if (rows.length === 0) {
+            return res.status(401).json({ success: false, message: "Invalid email or password" });
+        }
+
+        const user = rows[0];
+
+        // 2. Check Password
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: "Invalid email or password" });
+        }
+
+        // 3. Generate Token (The "Digital ID")
+        const token = jwt.sign(
+            { 
+                id: user.resident_id, 
+                role: 'Resident',
+                email: user.email_address 
+            }, 
+            process.env.JWT_SECRET,
+            { expiresIn: '8h' } // Token expires in 8 hours (typical work day)
+        );
+
+        // 4. Send Success Response
+        res.json({
+            success: true,
+            message: "Login Successful",
+            token: token,
+            user: {
+                id: user.resident_id,
+                name: `${user.first_name} ${user.last_name}`,
+                email: user.email_address
+            }
+        });
+
+    } catch (error) {
+        console.error("Login Error:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    } finally {
+        if (conn) conn.end();
+    }
 };
