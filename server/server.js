@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import systemRoutes from './src/routes/system.routes.js';
+import authRoutes from './src/routes/auth.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -26,6 +27,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/system', systemRoutes);
+app.use('/api/auth', authRoutes);
 
 
 // Start Server
