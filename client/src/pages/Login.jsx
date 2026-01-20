@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import axios from 'axios';
-import { 
-    Container, TextField, Button, Typography, Card, CardContent, 
-    Alert, Box 
+import {
+    Container, TextField, Button, Typography, Card, CardContent,
+    Alert, Box
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const Login = () => {
     const navigate = useNavigate();
@@ -41,8 +41,8 @@ const Login = () => {
     };
 
     return (
-        <Container maxWidth="xs" sx={{ mt: 10 }}>
-            <Card variant="outlined" sx={{ p: 2 }}>
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Card variant="outlined" sx={{ p: 2, maxWidth: 400, width: '100%' }}>
                 <CardContent>
                     <Box textAlign="center" mb={3}>
                         <Typography variant="h4">Login</Typography>
@@ -67,13 +67,13 @@ const Login = () => {
                         >
                             Login
                         </Button>
-                        {/* <Link to="/register" variant="body2" display="block" textAlign="center" sx={{ mt: 2 }}>
-                            Don't have an account? Register
-                        </Link> */}
+                        <Link to="/register">
+                            <Typography variant="body2" display="block" textAlign="center" sx={{ mt: 2 }}>Don't have an account? Register</Typography>
+                        </Link>
                     </form>
                 </CardContent>
             </Card>
-        </Container>
+        </Box>
     );
 };
 
