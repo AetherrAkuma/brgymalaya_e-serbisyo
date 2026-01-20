@@ -32,7 +32,7 @@ const Login = () => {
             alert(`Welcome back, ${response.data.user.name}!`);
             
             // TODO: Redirect to Dashboard (Phase 4)
-            navigate('/'); 
+            navigate('/dashboard');
 
         } catch (err) {
             console.error(err);
