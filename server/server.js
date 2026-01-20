@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import systemRoutes from './src/routes/system.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -14,6 +15,7 @@ app.use(helmet()); // Secure HTTP headers
 app.use(cors()); // Allow React Frontend to connect
 app.use(express.json()); // Parse JSON bodies (for Form Data)
 
+
 // Basic Test Route (To verify API is working)
 app.get('/api/health', (req, res) => {
   res.json({
@@ -22,6 +24,9 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+app.use('/api/system', systemRoutes);
+
 
 // Start Server
 app.listen(PORT, () => {
