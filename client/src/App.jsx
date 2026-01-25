@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import ResidentLayout from './layouts/ResidentLayout';
-import PublicLayout from './layouts/PublicLayout'; // Import New Layout
+import ResidentLayout from './layouts/ResidentLayout'; // Sidebar Layout
+import PublicLayout from './layouts/PublicLayout'; // Navbar Layout
 import ResidentDashboard from './pages/ResidentDashboard';
+import RequestDocument from './pages/RequestDocument';
 import Home from './pages/Home';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -20,18 +21,17 @@ function App() {
         </Route>
 
         {/* === PRIVATE RESIDENT LAYOUT (Sidebar Enabled) === */}
-        {/* Note: We added "/dashboard" as the parent path to keep URLs clean */}
-        <Route path="/dashboard" element={
+        {/* WE REMOVED path="/dashboard" here to make sub-routes simpler */}
+        <Route element={
             <ProtectedRoute>
               <ResidentLayout />
             </ProtectedRoute>
         }>
           
-          {/* Default view when going to /dashboard */}
-          <Route index element={<ResidentDashboard />} />
-          
-          <Route path="request" element={<div>Request Form</div>} />
-          <Route path="history" element={<div>History</div>} />
+          {/* Now these paths are at the "Root" level but still have the Sidebar */}
+          <Route path="/dashboard" element={<ResidentDashboard />} />
+          <Route path="/request" element={<RequestDocument />} />
+          <Route path="/history" element={<div>Transaction History</div>} />
 
         </Route>
 
