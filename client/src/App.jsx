@@ -1,48 +1,38 @@
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
-import Register from './pages/Register';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Login from './pages/Login';
-import { Button, Container, Typography, Box } from '@mui/material';
-import SendIcon from '@mui/icons-material/Send';
-import ResidentLayout from './layouts/ResidentLayout'; // Import Layout
-import ResidentDashboard from './pages/ResidentDashboard'; // Import Dashboard
-import ProtectedRoute from './components/ProtectedRoute'; // Import Security
-
-// Simple Home Page Component
-const Home = () => (
-  <Container sx={{ mt: 10, textAlign: 'center' }}>
-    <Typography variant="h3" gutterBottom>E-Serbisyo Portal</Typography>
-    <Box>
-      <Link to="/login" style={{ textDecoration: 'none', marginRight: '10px' }}>
-        <Button variant="contained" size="large">Login</Button>
-      </Link>
-      <Link to="/register" style={{ textDecoration: 'none' }}>
-        <Button variant="outlined" size="large">Register</Button>
-      </Link>
-    </Box>
-  </Container>
-);
+import Register from './pages/Register';
+import ResidentLayout from './layouts/ResidentLayout';
+import PublicLayout from './layouts/PublicLayout'; // Import New Layout
+import ResidentDashboard from './pages/ResidentDashboard';
+import Home from './pages/Home';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public Routes */}
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        
+        {/* === PUBLIC LAYOUT (Home, Login, Register) === */}
+        <Route element={<PublicLayout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+        </Route>
 
-        {/* Protected Resident Routes */}
+        {/* === PRIVATE RESIDENT LAYOUT (Sidebar Enabled) === */}
+        {/* Note: We added "/dashboard" as the parent path to keep URLs clean */}
         <Route path="/dashboard" element={
-          <ProtectedRoute>
-            <ResidentLayout />
-          </ProtectedRoute>
+            <ProtectedRoute>
+              <ResidentLayout />
+            </ProtectedRoute>
         }>
-          {/* Index matches "/dashboard" */}
-          <Route index element={<ResidentDashboard />} /> 
           
-          {/* We will add these pages next */}
-          <Route path="request" element={<div>Request Form Coming Soon</div>} />
-          <Route path="history" element={<div>History Coming Soon</div>} />
+          {/* Default view when going to /dashboard */}
+          <Route index element={<ResidentDashboard />} />
+          
+          <Route path="request" element={<div>Request Form</div>} />
+          <Route path="history" element={<div>History</div>} />
+
         </Route>
 
       </Routes>

@@ -29,10 +29,15 @@ const ResidentLayout = () => {
         navigate('/login');
     };
 
-    const menuItems = [
-        { text: 'Home / Announcements', icon: <DashboardIcon />, path: '/dashboard' },
-        { text: 'Request Document', icon: <DescriptionIcon />, path: '/dashboard/request' },
-        { text: 'My Transactions', icon: <HistoryIcon />, path: '/dashboard/history' },
+const menuItems = [
+        { text: 'Home', icon: <DashboardIcon />, path: '/' }, // Public Home
+        
+        // Show these only if logged in
+        ...(user ? [
+            { text: 'My Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+            { text: 'Request Document', icon: <DescriptionIcon />, path: '/request' },
+            { text: 'My Transactions', icon: <HistoryIcon />, path: '/history' },
+        ] : [])
     ];
 
     return (
