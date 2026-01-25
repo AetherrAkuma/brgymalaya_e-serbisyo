@@ -9,6 +9,8 @@ import Home from './pages/Home';
 import ProtectedRoute from './components/ProtectedRoute';
 import TransactionHistory from './pages/TransactionHistory';
 import AdminLogin from './pages/admin/AdminLogin';
+import AdminLayout from './layouts/AdminLayout';
+import AdminDashboard from './pages/admin/AdminDashboard';
 
 function App() {
   return (
@@ -38,8 +40,21 @@ function App() {
         </Route>
 
         {/* === ADMIN LOGIN ROUTE === */}
+        {/* === ADMIN PORTAL (Protected by Layout) === */}
         <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="/admin/dashboard" element={<div><h1>Admin Dashboard (Coming Soon)</h1></div>} />
+
+        <Route path="/admin" element={<AdminLayout />}>
+            <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="requests" element={<div>Request Queue (Coming Soon)</div>} />
+            <Route path="residents" element={<div>Resident DB (Coming Soon)</div>} />
+        </Route>
+
+        <Route path="/admin" element={<AdminLayout />}>
+            <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="requests" element={<div>Request Queue (Coming Soon)</div>} />
+            <Route path="residents" element={<div>Resident Database (Coming Soon)</div>} />
+            <Route path="announcements" element={<div>Manage Announcements (Coming Soon)</div>} /> {/* <--- ADDED */}
+        </Route>
 
       </Routes>
     </BrowserRouter>
