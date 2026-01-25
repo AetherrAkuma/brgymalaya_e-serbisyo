@@ -8,6 +8,7 @@ import RequestDocument from './pages/RequestDocument';
 import Home from './pages/Home';
 import ProtectedRoute from './components/ProtectedRoute';
 import TransactionHistory from './pages/TransactionHistory';
+import AdminLogin from './pages/admin/AdminLogin';
 
 function App() {
   return (
@@ -36,7 +37,9 @@ function App() {
 
         </Route>
 
-
+        {/* === ADMIN LOGIN ROUTE === */}
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/dashboard" element={<div><h1>Admin Dashboard (Coming Soon)</h1></div>} />
 
       </Routes>
     </BrowserRouter>
