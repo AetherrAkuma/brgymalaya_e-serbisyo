@@ -7,6 +7,7 @@ import ResidentDashboard from './pages/ResidentDashboard';
 import RequestDocument from './pages/RequestDocument';
 import Home from './pages/Home';
 import ProtectedRoute from './components/ProtectedRoute';
+import TransactionHistory from './pages/TransactionHistory';
 
 function App() {
   return (
@@ -31,9 +32,11 @@ function App() {
           {/* Now these paths are at the "Root" level but still have the Sidebar */}
           <Route path="/dashboard" element={<ResidentDashboard />} />
           <Route path="/request" element={<RequestDocument />} />
-          <Route path="/history" element={<div>Transaction History</div>} />
+          <Route path="/history" element={<TransactionHistory />} /> 
 
         </Route>
+
+
 
       </Routes>
     </BrowserRouter>

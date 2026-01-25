@@ -60,3 +60,38 @@ export const createRequest = async (req, res) => {
         if (conn) conn.end();
     }
 };
+
+// GET /api/requests/history
+export const getMyRequests = async (req, res) => {
+    const resident_id = req.user.id; 
+
+    let conn;
+    try {
+        conn = await getConnection();
+        
+        // We JOIN tables to get the text name of the document (not just the ID)
+        const query = `
+            SELECT 
+                r.request_id, 
+                r.reference_no, 
+                d.type_name, 
+                r.request_status, 
+                r.request_date,
+                d.base_fee
+            FROM tbl_Requests r
+            JOIN tbl_DocumentTypes d ON r.doc_type_id = d.doc_type_id
+            WHERE r.resident_id = ?
+            ORDER BY r.request_date DESC
+        `;
+
+        const rows = await conn.query(query, [resident_id]);
+        res.json({ success: true, data: rows });
+
+    } catch (err) {
+        console.error("History Error:", err);
+        res.status(500).json({ success: false, message: "Server Error" });
+    } finally {
+        if (conn) conn.end();
+    }
+};
+
