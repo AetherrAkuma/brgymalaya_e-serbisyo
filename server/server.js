@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import systemRoutes from './src/routes/system.routes.js';
 import authRoutes from './src/routes/auth.routes.js';
 import requestRoutes from './src/routes/request.routes.js';
+import adminRoutes from './src/routes/admin.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -30,6 +31,10 @@ app.get('/api/health', (req, res) => {
 app.use('/api/system', systemRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/requests', requestRoutes);
+
+
+// THE NEW ADMIN ROUTE GROUP
+app.use('/api/admin/auth', adminRoutes);
 
 
 // Start Server
