@@ -34,7 +34,7 @@ app.use('/api/requests', requestRoutes);
 
 
 // THE NEW ADMIN ROUTE GROUP
-app.use('/api/admin/auth', adminRoutes);
+app.use('/api/admin', adminRoutes);
 
 
 // Start Server

@@ -1,16 +1,19 @@
 import { Outlet, useNavigate } from 'react-router-dom';
-import { Box, Drawer, List, ListItem, ListItemIcon, ListItemText, Typography, AppBar, Toolbar, Button, Divider } from '@mui/material';
+import { 
+    Box, Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText, 
+    Typography, AppBar, Toolbar, Button, Divider 
+} from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
-import AssignmentIcon from '@mui/icons-material/Assignment'; // Requests
-import PeopleIcon from '@mui/icons-material/People'; // Resident DB
-import CampaignIcon from '@mui/icons-material/Campaign'; // Announcements
+import AssignmentIcon from '@mui/icons-material/Assignment'; 
+import PeopleIcon from '@mui/icons-material/People'; 
+import CampaignIcon from '@mui/icons-material/Campaign'; 
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 
 const drawerWidth = 240;
 
 const AdminLayout = () => {
     const navigate = useNavigate();
-    const userRole = localStorage.getItem('user_role'); // e.g., "Captain", "Treasurer"
+    const userRole = localStorage.getItem('user_role'); 
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -43,41 +46,49 @@ const AdminLayout = () => {
             >
                 <Toolbar /> {/* Spacer */}
                 <Box sx={{ overflow: 'auto' }}>
-                    <Box sx={{ p: 2, textAlign: 'center', borderBottom: '1px solid #ddd', bgcolor: '#f5f5f5' }}>
-                        <Typography variant="subtitle2" color="textSecondary">LOGGED IN AS</Typography>
+                    <Box sx={{ p: 2, textAlign: 'center', bgcolor: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
+                        <Typography variant="caption" display="block" color="textSecondary">CURRENTLY LOGGED IN AS</Typography>
                         <Typography variant="subtitle1" fontWeight="bold" sx={{ color: '#1a237e' }}>
-                            {userRole?.toUpperCase()}
+                            {userRole?.toUpperCase() || 'ADMIN'}
                         </Typography>
                     </Box>
 
                     <List>
-                        {/* 1. DASHBOARD (Everyone) */}
-                        <ListItem button onClick={() => navigate('/admin/dashboard')}>
-                            <ListItemIcon><DashboardIcon /></ListItemIcon>
-                            <ListItemText primary="Overview" />
+                        {/* A. DASHBOARD */}
+                        <ListItem disablePadding>
+                            <ListItemButton onClick={() => navigate('/admin/dashboard')}>
+                                <ListItemIcon><DashboardIcon /></ListItemIcon>
+                                <ListItemText primary="Overview" />
+                            </ListItemButton>
                         </ListItem>
                         
-                        {/* 2. REQUEST QUEUE (Everyone needs to see tasks) */}
-                        <ListItem button onClick={() => navigate('/admin/requests')}>
-                            <ListItemIcon><AssignmentIcon /></ListItemIcon>
-                            <ListItemText primary="Request Queue" />
+                        {/* B. REQUEST QUEUE */}
+                        <ListItem disablePadding>
+                            <ListItemButton onClick={() => navigate('/admin/requests')}>
+                                <ListItemIcon><AssignmentIcon /></ListItemIcon>
+                                <ListItemText primary="Request Queue" />
+                            </ListItemButton>
                         </ListItem>
-
-                        {/* 3. RESIDENT DATABASE (Captain, Secretary, AND Treasurer) */}
-                        {['Captain', 'Secretary', 'Treasurer'].includes(userRole) && (
-                            <ListItem button onClick={() => navigate('/admin/residents')}>
-                                <ListItemIcon><PeopleIcon /></ListItemIcon>
-                                <ListItemText primary="Resident Database" />
-                            </ListItem>
-                        )}
 
                         <Divider />
 
-                        {/* 4. ANNOUNCEMENTS (Captain & Secretary Only) */}
+                        {/* C. RESIDENT DB */}
+                        {['Captain', 'Secretary', 'Treasurer'].includes(userRole) && (
+                            <ListItem disablePadding>
+                                <ListItemButton onClick={() => navigate('/admin/residents')}>
+                                    <ListItemIcon><PeopleIcon /></ListItemIcon>
+                                    <ListItemText primary="Resident Database" />
+                                </ListItemButton>
+                            </ListItem>
+                        )}
+
+                        {/* D. ANNOUNCEMENTS */}
                         {['Captain', 'Secretary'].includes(userRole) && (
-                            <ListItem button onClick={() => navigate('/admin/announcements')}>
-                                <ListItemIcon><CampaignIcon /></ListItemIcon>
-                                <ListItemText primary="Announcements" />
+                            <ListItem disablePadding>
+                                <ListItemButton onClick={() => navigate('/admin/announcements')}>
+                                    <ListItemIcon><CampaignIcon /></ListItemIcon>
+                                    <ListItemText primary="Announcements" />
+                                </ListItemButton>
                             </ListItem>
                         )}
                     </List>

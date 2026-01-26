@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ResidentLayout from './layouts/ResidentLayout'; // Sidebar Layout
@@ -32,6 +32,7 @@ function App() {
               <ResidentLayout />
             </ProtectedRoute>
         }>
+          {/* <Route path="/admin" element={<Navigate to="/admin/login" replace />} /> */}
           <Route element={<ProtectedAdminRoute />}>
           {/* Now these paths are at the "Root" level but still have the Sidebar */}
           <Route path="/dashboard" element={<ResidentDashboard />} />
@@ -41,22 +42,31 @@ function App() {
 
         </Route>
 
-        {/* === ADMIN LOGIN ROUTE === */}
-        {/* === ADMIN PORTAL (Protected by Layout) === */}
-        <Route path="/admin/login" element={<AdminLogin />} />
+        {/* =========================================================
+          ADMIN PORTAL SECURITY ZONE
+      ========================================================= */}
 
-        <Route path="/admin" element={<AdminLayout />}>
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="requests" element={<div>Request Queue (Coming Soon)</div>} />
-            <Route path="residents" element={<div>Resident DB (Coming Soon)</div>} />
-        </Route>
+      {/* 1. PUBLIC: The Login Door (Must be OUTSIDE the guard) */}
+      <Route path="/admin/login" element={<AdminLogin />} />
 
-        <Route path="/admin" element={<AdminLayout />}>
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="requests" element={<div>Request Queue (Coming Soon)</div>} />
-            <Route path="residents" element={<div>Resident Database (Coming Soon)</div>} />
-            <Route path="announcements" element={<div>Manage Announcements (Coming Soon)</div>} /> {/* <--- ADDED */}
-        </Route>
+      {/* 2. PROTECTED: Everything inside this wrapper requires a Token */}
+      <Route element={<ProtectedAdminRoute />}>
+
+          {/* All these paths are checked by the Bouncer */}
+          <Route path="/admin" element={<AdminLayout />}>
+
+              {/* Redirect /admin to /admin/login */}
+              <Route index element={<Navigate to="/admin/login" replace />} />
+
+              <Route path="dashboard" element={<AdminDashboard />} />
+
+              {/* Placeholders */}
+              <Route path="residents" element={<div>Residents DB</div>} />
+              <Route path="announcements" element={<div>Announcements</div>} />
+          </Route>
+
+      </Route>
+      {/* ========================================================= */}
 
       </Routes>
     </BrowserRouter>
