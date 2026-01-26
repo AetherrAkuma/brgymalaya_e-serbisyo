@@ -11,6 +11,7 @@ import TransactionHistory from './pages/TransactionHistory';
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminLayout from './layouts/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import ProtectedAdminRoute from './components/ProtectedAdminRoute';
 
 function App() {
   return (
@@ -31,11 +32,12 @@ function App() {
               <ResidentLayout />
             </ProtectedRoute>
         }>
-          
+          <Route element={<ProtectedAdminRoute />}>
           {/* Now these paths are at the "Root" level but still have the Sidebar */}
           <Route path="/dashboard" element={<ResidentDashboard />} />
           <Route path="/request" element={<RequestDocument />} />
           <Route path="/history" element={<TransactionHistory />} /> 
+          </Route>
 
         </Route>
 
