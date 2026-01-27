@@ -92,7 +92,8 @@ export const loginUser = async (req, res) => {
             user: {
                 id: user.resident_id,
                 name: `${user.first_name} ${user.last_name}`,
-                email: user.email_address
+                email: user.email_address,
+                role: 'Resident'
             }
         });
 
