@@ -108,18 +108,28 @@ export const getAllRequests = async (req, res) => {
         const query = `
             SELECT 
                 r.request_id,
-                r.document_type,
+                r.doc_type_id, 
+                r.reference_no,
                 r.purpose,
                 r.request_status,
                 r.date_requested,
-                u.full_name AS resident_name
+                u.first_name, 
+                u.last_name
             FROM tbl_Requests r
-            JOIN tbl_Residents u ON r.user_id = u.user_id
+            JOIN tbl_Residents u ON r.resident_id = u.resident_id
             ORDER BY r.date_requested DESC
         `;
         
+        // Note: We select first_name/last_name because u.full_name might not exist in your new schema
         const rows = await conn.query(query);
-        res.json({ success: true, requests: rows });
+        
+        // Optional: Combine names for frontend convenience
+        const formattedRows = rows.map(row => ({
+            ...row,
+            resident_name: `${row.first_name} ${row.last_name}`
+        }));
+
+        res.json({ success: true, requests: formattedRows });
 
     } catch (err) {
         console.error("Fetch Queue Error:", err);
