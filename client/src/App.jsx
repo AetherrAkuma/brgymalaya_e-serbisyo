@@ -32,14 +32,10 @@ function App() {
               <ResidentLayout />
             </ProtectedRoute>
         }>
-          {/* <Route path="/admin" element={<Navigate to="/admin/login" replace />} /> */}
-          <Route element={<ProtectedAdminRoute />}>
           {/* Now these paths are at the "Root" level but still have the Sidebar */}
           <Route path="/dashboard" element={<ResidentDashboard />} />
           <Route path="/request" element={<RequestDocument />} />
-          <Route path="/history" element={<TransactionHistory />} /> 
-          </Route>
-
+          <Route path="/history" element={<TransactionHistory />} />
         </Route>
 
         {/* =========================================================
