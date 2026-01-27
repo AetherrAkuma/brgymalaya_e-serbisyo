@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import DescriptionIcon from '@mui/icons-material/Description';
 import SecurityIcon from '@mui/icons-material/Security';
 import SpeedIcon from '@mui/icons-material/Speed';
+import Divider from '@mui/material/Divider';
 
 const Home = () => {
     const theme = useTheme();
@@ -150,47 +151,189 @@ const Home = () => {
                     </Grid>
                 </Box>
 
-                {/* 3. LATEST ANNOUNCEMENTS (This is the section that needed fixing) */}
-                <Box sx={{ mb: { xs: 4, sm: 5, md: 6 }, px: { xs: 1, sm: 0 } }}>
-                    
+                {/* 3. LATEST ANNOUNCEMENTS */}
+                <Box
+                sx={{
+                    width: '100vw',
+                    position: 'relative',
+                    left: '50%',
+                    right: '50%',
+                    marginLeft: '-50vw',
+                    marginRight: '-50vw',
+                    backgroundColor: '#2e2e2e',
+                    py: { xs: 4, sm: 6 },
+                }}
+                >
+                <Box
+                    sx={{
+                    maxWidth: 1200,
+                    mx: 'auto',
+                    px: { xs: 2, sm: 3 },
+                    }}
+                >
                     {/* Centered Heading */}
                     <Typography
-                        variant={isMobile ? "h5" : "h4"}
-                        component="h2"
-                        gutterBottom
-                        sx={{
-                            textAlign: 'center',
-                            fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' },
-                            mb: 3
-                        }}
-                    >
-                        Latest Announcements
-                    </Typography>
+                variant={isMobile ? 'h5' : 'h4'}
+                component="h2"
+                gutterBottom
+                sx={{
+                    textAlign: 'center',
+                    fontSize: { xs: '1.5rem', sm: '2rem', md: '2.125rem' },
+                    mb: 1, // reduced margin-bottom to fit nicely with the subline
+                    color: '#ffffff',
+                }}
+                >
+                Announcements and Programs
+                </Typography>
 
-                    <Grid container spacing={{ xs: 2, sm: 3 }}>
-                        {/* xs={12} ensures full width. */}
-                        <Grid item xs={12}>
-                            <Card variant="outlined" sx={{ 
-                                width: '100%',
-                                boxShadow: 2, 
-                                transition: 'box-shadow 0.3s ease', 
-                                '&:hover': { boxShadow: 4 } 
-                            }}>
-                                <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-                                    <Typography variant={isMobile ? "subtitle1" : "h6"} sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                                        System Launch: E-Serbisyo is Live!
-                                    </Typography>
-                                    <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
-                                        January 24, 2026
-                                    </Typography>
-                                    <Typography variant="body1" sx={{ mt: 2 }}>
-                                        We are officially launching the new web portal. Please register your account to begin transacting with the Barangay Hall.
-                                    </Typography>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    </Grid>
-                </Box>
+                <Typography
+                variant="subtitle1"
+                sx={{
+                    textAlign: 'center',
+                    color: '#bdbdbd',
+                    fontSize: '1.3rem',
+                    mb: 4, // space before the cards start
+                }}
+                >
+                Stay informed with our community updates
+                </Typography>
+
+
+    {/* Flex container for cards */}
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: { xs: 'column', md: 'row' }, // stacked on mobile, row on desktop
+        gap: 3, // space between cards
+        justifyContent: 'center',
+        alignItems: 'stretch',
+      }}
+    >
+      {/* 1st Card */}
+      <Card
+        sx={{
+          flex: 1,
+          maxWidth: 380,
+          backgroundColor: '#2f2f2f',
+          color: '#ffffff',
+          borderRadius: 3,
+          overflow: 'hidden',
+          boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
+          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+          '&:hover': {
+            transform: 'translateY(-4px)',
+            boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
+          },
+        }}
+      >
+        <Box
+          component="img"
+          src="https://images.unsplash.com/photo-1521737604893-d14cc237f11d?q=80&w=800"
+          alt="System Launch"
+          sx={{ width: '100%', height: 180, objectFit: 'cover' }}
+        />
+        <CardContent sx={{ p: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+            System Launch: E-Serbisyo is Live!
+          </Typography>
+          <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
+          <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
+            January 24, 2026
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
+            We are officially launching the new web portal. Please register your account to begin transacting with the Barangay Hall.
+          </Typography>
+          <Button fullWidth variant="contained" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
+            Read More
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* 2nd Card */}
+      <Card
+        sx={{
+          flex: 1,
+          maxWidth: 380,
+          backgroundColor: '#2f2f2f',
+          color: '#ffffff',
+          borderRadius: 3,
+          overflow: 'hidden',
+          boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
+          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+          '&:hover': {
+            transform: 'translateY(-4px)',
+            boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
+          },
+        }}
+      >
+        <Box
+          component="img"
+          src="https://images.unsplash.com/photo-1556761175-4b46a572b786?q=80&w=800"
+          alt="Online Clearance"
+          sx={{ width: '100%', height: 180, objectFit: 'cover' }}
+        />
+        <CardContent sx={{ p: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+            Barangay Clearance Online Processing
+          </Typography>
+          <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
+          <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
+            February 2, 2026
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
+            Residents can now request barangay clearance online with faster processing and real-time status updates.
+          </Typography>
+          <Button fullWidth variant="contained" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
+            Read More
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* 3rd Card */}
+      <Card
+        sx={{
+          flex: 1,
+          maxWidth: 380,
+          backgroundColor: '#2f2f2f',
+          color: '#ffffff',
+          borderRadius: 3,
+          overflow: 'hidden',
+          boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
+          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+          '&:hover': {
+            transform: 'translateY(-4px)',
+            boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
+          },
+        }}
+      >
+        <Box
+          component="img"
+          src="https://images.unsplash.com/photo-1529070538774-1843cb3265df?q=80&w=800"
+          alt="Community Meeting"
+          sx={{ width: '100%', height: 180, objectFit: 'cover' }}
+        />
+        <CardContent sx={{ p: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+            Community Meeting Announcement
+          </Typography>
+          <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
+          <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
+            February 10, 2026
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
+            Join us for the monthly community meeting to discuss upcoming projects and public services improvements.
+          </Typography>
+          <Button fullWidth variant="contained" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
+            Read More
+          </Button>
+        </CardContent>
+      </Card>
+    </Box>
+  </Box>
+</Box>
+
+
+
             </Container>
         </Box>
     );
