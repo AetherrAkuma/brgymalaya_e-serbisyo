@@ -76,12 +76,12 @@ export const getMyRequests = async (req, res) => {
                 r.reference_no, 
                 d.type_name, 
                 r.request_status, 
-                r.request_date,
+                r.date_requested, // Fixed column name
                 d.base_fee
             FROM tbl_Requests r
             JOIN tbl_DocumentTypes d ON r.doc_type_id = d.doc_type_id
             WHERE r.resident_id = ?
-            ORDER BY r.request_date DESC
+            ORDER BY r.date_requested DESC
         `;
 
         const rows = await conn.query(query, [resident_id]);
