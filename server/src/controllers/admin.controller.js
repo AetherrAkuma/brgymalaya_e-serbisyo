@@ -33,7 +33,7 @@ export const loginAdmin = async (req, res) => {
         // Generate Token
         const token = jwt.sign(
             { 
-                id: official.official_id, 
+                id: official.user_id, 
                 role: official.role,
                 is_admin: true 
             }, 
