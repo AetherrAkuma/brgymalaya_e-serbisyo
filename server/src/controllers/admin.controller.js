@@ -10,6 +10,10 @@ export const loginAdmin = async (req, res) => {
     try {
         conn = await getConnection();
 
+        if (conn.code == "ECONNREFUSED") {
+            return res.status(503).json({ success: false, message: "Database connection failed. Please try again later." });
+        }
+
         // Check if Official exists
         const [official] = await conn.query(
             "SELECT * FROM tbl_BarangayOfficials WHERE username = ?", 
@@ -105,25 +109,27 @@ export const getAllRequests = async (req, res) => {
     try {
         conn = await getConnection();
 
+        // 👇 FIXED QUERY: Changed 'r.request_date' to 'r.date_requested'
         const query = `
             SELECT 
                 r.request_id,
-                r.doc_type_id, 
                 r.reference_no,
                 r.purpose,
                 r.request_status,
-                r.date_requested,
+                r.date_requested, 
                 u.first_name, 
-                u.last_name
+                u.last_name,
+                d.type_name,
+                d.base_fee
             FROM tbl_Requests r
             JOIN tbl_Residents u ON r.resident_id = u.resident_id
+            JOIN tbl_DocumentTypes d ON r.doc_type_id = d.doc_type_id
             ORDER BY r.date_requested DESC
         `;
         
-        // Note: We select first_name/last_name because u.full_name might not exist in your new schema
         const rows = await conn.query(query);
-        
-        // Optional: Combine names for frontend convenience
+
+        // Combine names for the frontend table
         const formattedRows = rows.map(row => ({
             ...row,
             resident_name: `${row.first_name} ${row.last_name}`

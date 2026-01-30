@@ -19,6 +19,7 @@ export async function getConnection() {
         return conn;
     } catch (err) {
         console.error('[Database Error] Connection failed:', err);
+        // give the error to the caller to print on frontend
         throw err;
     }
 }
