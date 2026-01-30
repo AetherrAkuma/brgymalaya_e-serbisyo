@@ -6,6 +6,7 @@ import systemRoutes from './src/routes/system.routes.js';
 import authRoutes from './src/routes/auth.routes.js';
 import requestRoutes from './src/routes/request.routes.js';
 import adminRoutes from './src/routes/admin.routes.js';
+import residentRoutes from './src/routes/resident.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -35,6 +36,8 @@ app.use('/api/requests', requestRoutes);
 
 // THE NEW ADMIN ROUTE GROUP
 app.use('/api/admin', adminRoutes);
+
+app.use('/api/resident', residentRoutes);
 
 
 // Start Server

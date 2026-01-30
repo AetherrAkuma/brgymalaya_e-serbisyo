@@ -2,6 +2,7 @@ import express from 'express';
 import { loginAdmin, getDashboardStats, getAllRequests, getRequestDetails, updateRequestStatus} from '../controllers/admin.controller.js';
 import { verifyAdmin } from '../middleware/adminAuth.middleware.js';
 import { authorizeRoles } from '../middleware/rbac.middleware.js';
+import { viewSecureFile } from '../controllers/admin.controller.js';
 
 
 const router = express.Router();
@@ -35,5 +36,9 @@ router.post('/announcements',
     authorizeRoles('Captain', 'Secretary'), 
     (req, res) => res.json({ message: "Announcement Posted" }) 
 );
+
+// E. VIEW SECURE FILE: Any Official Role
+router.get('/file/:filename', verifyAdmin, viewSecureFile);
+
 
 export default router;
