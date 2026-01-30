@@ -144,3 +144,65 @@ export const getAllRequests = async (req, res) => {
         if (conn) conn.end();
     }
 };
+
+// 4. GET SINGLE REQUEST DETAILS (The Missing Piece)
+export const getRequestDetails = async (req, res) => {
+    const { id } = req.params;
+    let conn;
+    try {
+        conn = await getConnection();
+        
+        // Fetch Request + Resident Info + Document Type Info
+        const query = `
+            SELECT 
+                r.*, 
+                u.first_name, u.middle_name, u.last_name, u.address_street, u.civil_status, u.contact_number,
+                d.type_name, d.base_fee, d.requirements
+            FROM tbl_Requests r
+            JOIN tbl_Residents u ON r.resident_id = u.resident_id
+            JOIN tbl_DocumentTypes d ON r.doc_type_id = d.doc_type_id
+            WHERE r.request_id = ?
+        `;
+        const [request] = await conn.query(query, [id]);
+
+        if (!request) return res.status(404).json({ success: false, message: "Request not found" });
+
+        res.json({ success: true, request });
+
+    } catch (err) {
+        console.error("Fetch Details Error:", err);
+        res.status(500).json({ success: false, message: "Server Error" });
+    } finally {
+        if (conn) conn.end();
+    }
+};
+
+// 5. UPDATE REQUEST STATUS (The Action Logic)
+export const updateRequestStatus = async (req, res) => {
+    const { id } = req.params;
+    const { status, reason } = req.body; // status = 'Approved', 'Rejected', etc.
+
+    let conn;
+    try {
+        conn = await getConnection();
+        
+        // Update the status and set the processed_by to the current admin's ID
+        await conn.query(
+            "UPDATE tbl_Requests SET request_status = ?, processed_by = ? WHERE request_id = ?",
+            [status, req.user.id, id]
+        );
+
+        // If Rejected, save the reason
+        if (status === 'Rejected' && reason) {
+            await conn.query("UPDATE tbl_Requests SET rejection_reason = ? WHERE request_id = ?", [reason, id]);
+        }
+
+        res.json({ success: true, message: `Request updated to ${status}` });
+
+    } catch (err) {
+        console.error("Update Status Error:", err);
+        res.status(500).json({ success: false, message: "Server Error" });
+    } finally {
+        if (conn) conn.end();
+    }
+};

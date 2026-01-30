@@ -1,7 +1,8 @@
 import express from 'express';
-import { loginAdmin, getDashboardStats, getAllRequests } from '../controllers/admin.controller.js';
+import { loginAdmin, getDashboardStats, getAllRequests, getRequestDetails, updateRequestStatus} from '../controllers/admin.controller.js';
 import { verifyAdmin } from '../middleware/adminAuth.middleware.js';
 import { authorizeRoles } from '../middleware/rbac.middleware.js';
+
 
 const router = express.Router();
 
@@ -16,6 +17,10 @@ router.get('/stats', verifyAdmin, getDashboardStats);
 
 // B. REQUEST QUEUE: Becomes /api/admin/requests
 router.get('/requests', verifyAdmin, getAllRequests);
+
+// Get details of a specific request
+router.get('/requests/:id', verifyAdmin, getRequestDetails);
+router.put('/requests/:id/status', verifyAdmin, updateRequestStatus);
 
 // C. RESIDENTS DATABASE: Only Captain, Secretary, and Treasurer
 router.get('/residents', 

@@ -12,6 +12,7 @@ import AdminLogin from './pages/admin/AdminLogin';
 import AdminLayout from './layouts/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ProtectedAdminRoute from './components/ProtectedAdminRoute';
+import AdminRequests from './pages/admin/AdminRequests';
 
 function App() {
   return (
@@ -59,6 +60,9 @@ function App() {
               {/* Placeholders */}
               <Route path="residents" element={<div>Residents DB</div>} />
               <Route path="announcements" element={<div>Announcements</div>} />
+
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="requests" element={<AdminRequests />} />
           </Route>
 
       </Route>
