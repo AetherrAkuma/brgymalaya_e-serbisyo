@@ -1,0 +1,45 @@
+name: CI Bot (Client & Server)
+
+# Trigger: Run on any push to main or any Pull Request
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  validate-code:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Download your code to the bot's computer
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 2. Install Node.js
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        # Important: Tell the cache we have two package-lock files
+        cache-dependency-path: |
+          client/package-lock.json
+          server/package-lock.json
+
+    # 3. Check the SERVER (Node.js)
+    - name: Install Server Deps
+      run: cd server && npm ci
+      
+    - name: Build/Test Server
+      # If you don't have a "build" script in server, use "node index.js" or similar to check syntax
+      # Ideally, add "test": "echo 'No tests'" to server package.json so this passes
+      run: cd server && node server.js
+
+    # 4. Check the CLIENT (React)
+    - name: Install Client Deps
+      run: cd client && npm ci
+
+    - name: Build Client (React)
+      # This runs "react-scripts build". If it fails, the Bot turns RED.
+      run: cd client && npm run build
