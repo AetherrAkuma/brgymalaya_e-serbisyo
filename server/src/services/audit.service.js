@@ -1,4 +1,4 @@
-import { getConnection } from '../db.js';
+import { getConnection } from '../config/db.js';
 
 export const logAction = async (user_id, user_type, action_type, table_affected, record_id, details, req) => {
     let conn;
