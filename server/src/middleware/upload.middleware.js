@@ -3,21 +3,20 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
-// 1. Setup the Vault Folder
-const uploadDir = 'uploads/';
+// 1. Setup the Vault Folder (Using Absolute Path)
+const uploadDir = path.resolve('uploads'); // <--- FIX: Absolute path
 if (!fs.existsSync(uploadDir)){
     fs.mkdirSync(uploadDir);
 }
 
 // 2. Encryption Setup (AES-256)
-// We hash the .env key to ensure it is exactly 32 bytes
 const ALGORITHM = 'aes-256-ctr';
 const SECRET_KEY = crypto.createHash('sha256').update(String(process.env.FILE_ENCRYPTION_KEY)).digest('base64').substr(0, 32);
 
-// 3. Configure Multer to use RAM (Hold file briefly)
+// 3. Configure Multer
 const storage = multer.memoryStorage();
 
-// 4. File Filter (Reject EXEs, allow Images/PDFs)
+// 4. File Filter
 const fileFilter = (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -32,58 +31,51 @@ const fileFilter = (req, file, cb) => {
 
 export const upload = multer({ 
     storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Limit
+    limits: { fileSize: 5 * 1024 * 1024 }, 
     fileFilter: fileFilter
 });
 
-// 5. HELPER: Encrypt & Save (Now supports Custom Paths)
-export const saveEncryptedFile = (buffer, originalName, referenceNo, customPath = './uploads') => {
-    // 1. Ensure the custom path exists
-    // If the Admin set a path that doesn't exist, we try to create it.
-    if (!fs.existsSync(customPath)){
-        try {
-            fs.mkdirSync(customPath, { recursive: true });
-        } catch (err) {
-            console.error("Custom Path Error:", err);
-            // Fallback to default if custom path fails (e.g., permission error)
-            customPath = './uploads'; 
-            if (!fs.existsSync(customPath)) fs.mkdirSync(customPath);
-        }
+// 5. HELPER: Encrypt & Save
+export const saveEncryptedFile = (buffer, originalName, referenceNo, customPath) => {
+    // Use the absolute uploadDir if customPath is not provided
+    const targetDir = customPath ? path.resolve(customPath) : uploadDir;
+
+    if (!fs.existsSync(targetDir)){
+        fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    // 2. Generate the Secure Filename
-    // Naming Strategy: REQ-123456_filename.png.enc
     const extension = path.extname(originalName);
     const secureName = `${referenceNo}_${originalName}${extension}.enc`; 
-    const filepath = path.join(customPath, secureName);
+    const filepath = path.join(targetDir, secureName);
 
-    // 3. Create IV & Encrypt
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv(ALGORITHM, SECRET_KEY, iv);
     const encrypted = Buffer.concat([iv, cipher.update(buffer), cipher.final()]);
 
-    // 4. Save to the specific folder
     fs.writeFileSync(filepath, encrypted);
 
     return secureName;
 };
 
-// 6. HELPER: Decrypt & Read (Call this in "View" Route)
+// 6. HELPER: Decrypt & Read
 export const getDecryptedFile = (filename) => {
+    // Use the absolute path to find the file
     const filepath = path.join(uploadDir, filename);
     
-    if (!fs.existsSync(filepath)) return null;
+    if (!fs.existsSync(filepath)) {
+        console.error(`Decrypt Error: File not found at ${filepath}`);
+        return null;
+    }
 
-    // Read Encrypted File
-    const encryptedBuffer = fs.readFileSync(filepath);
-
-    // Split IV and Data
-    const iv = encryptedBuffer.slice(0, 16);
-    const data = encryptedBuffer.slice(16);
-
-    // Decrypt
-    const decipher = crypto.createDecipheriv(ALGORITHM, SECRET_KEY, iv);
-    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
-
-    return decrypted;
+    try {
+        const encryptedBuffer = fs.readFileSync(filepath);
+        const iv = encryptedBuffer.slice(0, 16);
+        const data = encryptedBuffer.slice(16);
+        const decipher = crypto.createDecipheriv(ALGORITHM, SECRET_KEY, iv);
+        const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+        return decrypted;
+    } catch (err) {
+        console.error("Decryption failed:", err);
+        throw err;
+    }
 };

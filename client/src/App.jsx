@@ -12,7 +12,7 @@ import AdminLogin from './pages/admin/AdminLogin';
 import AdminLayout from './layouts/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ProtectedAdminRoute from './components/ProtectedAdminRoute';
-import AdminRequests from './pages/admin/AdminRequests';
+import AdminRequest from './pages/admin/AdminRequest';
 
 function App() {
   return (
@@ -62,7 +62,7 @@ function App() {
               <Route path="announcements" element={<div>Announcements</div>} />
 
               <Route path="dashboard" element={<AdminDashboard />} />
-              <Route path="requests" element={<AdminRequests />} />
+              <Route path="requests" element={<AdminRequest />} />
           </Route>
 
       </Route>
