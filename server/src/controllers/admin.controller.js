@@ -2,9 +2,10 @@ import { getConnection } from '../config/db.js';
 import { getDecryptedFile } from '../middleware/upload.middleware.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import fs from 'fs';   // <--- NEW IMPORT
-import path from 'path'; // <--- NEW IMPORT
+import fs from 'fs';
+import path from 'path';
 import { logAction } from '../services/audit.service.js';
+
 
 // HELPER: Scan the 'uploads' folder to find a file matching the Reference No.
 const findFileForRequest = (refNo) => {
@@ -149,38 +150,80 @@ export const getRequestDetails = async (req, res) => {
 // 5. UPDATE REQUEST STATUS
 export const updateRequestStatus = async (req, res) => {
     const { id } = req.params;
-    const { status, reason } = req.body; 
+    // Treasurer inputs: OR Number & Amount
+    const { status, reason, or_number, amount_paid } = req.body; 
 
     let conn;
     try {
         conn = await getConnection();
         
+        // --- 🛡️ SECURITY CHECK: PREVENT DUPLICATE RECEIPTS ---
+        if (status === 'Approved' && or_number) {
+            // Check if this OR Number already exists in the system
+            const [dupeCheck] = await conn.query(
+                "SELECT payment_id FROM tbl_Payments WHERE or_number = ?", 
+                [or_number]
+            );
+            
+            if (dupeCheck.length > 0) {
+                // STOP THE PROCESS IMMEDIATELY
+                return res.status(400).json({ 
+                    success: false, 
+                    message: `SECURITY ALERT: OR Number ${or_number} has already been used!` 
+                });
+            }
+        }
+        // -------------------------------------------------------
+
+        // 1. Update the Main Request Status
         await conn.query(
             "UPDATE tbl_Requests SET request_status = ?, processed_by = ? WHERE request_id = ?",
             [status, req.user.id, id]
         );
-        // AUDIT LOGGING
-        await conn.query(
-    "UPDATE tbl_Requests SET request_status = ?, processed_by = ? WHERE request_id = ?",
-    [status, req.user.id, id]
-);
 
-        // Audit Log the action
-        // This fulfills FR13: "Log critical data modification"
-        await logAction(
-            req.user.id,           // Who: Admin ID
-            'Admin',               // Role
-            `UPDATE_STATUS_${status.toUpperCase()}`, // Action: e.g., UPDATE_STATUS_APPROVED
-            'tbl_Requests',        // Table
-            id,                    // Record ID
-            { status: status, reason: reason, or_number: or_number }, // Details
-            req                    // Request object (to get IP)
-        );
+        // 2. If Rejected, save the reason
         if (status === 'Rejected' && reason) {
             await conn.query("UPDATE tbl_Requests SET rejection_reason = ? WHERE request_id = ?", [reason, id]);
         }
 
-        res.json({ success: true, message: `Request updated to ${status}` });
+        // 3. IF APPROVED (TREASURER CONFIRMED PAYMENT): Save to Money Table
+        if (status === 'Approved' && or_number && amount_paid) {
+            // Double check we don't pay twice for the same request
+            const [existing] = await conn.query("SELECT payment_id FROM tbl_Payments WHERE request_id = ?", [id]);
+            
+            if (existing.length === 0) {
+                await conn.query(`
+                    INSERT INTO tbl_Payments 
+                    (request_id, amount_paid, or_number, payment_date, treasurer_id, payment_status, payor_name)
+                    VALUES (?, ?, ?, NOW(), ?, 'Paid', 
+                    (SELECT CONCAT(first_name, ' ', last_name) FROM tbl_Residents WHERE resident_id = (SELECT resident_id FROM tbl_Requests WHERE request_id = ?))
+                    )
+                `, [id, amount_paid, or_number, req.user.id, id]);
+            }
+        }
+
+        // --- 🕵️ AUDIT TRAIL: LOG THE ACTION (FR13) ---
+        // This runs silently in the background
+        const auditDetails = {
+            previous_status: 'ForPayment', // Simplified for now
+            new_status: status,
+            or_number: or_number || 'N/A',
+            amount: amount_paid || '0.00',
+            reason: reason || 'N/A'
+        };
+
+        await logAction(
+            req.user.id,                // Who did it?
+            'Admin',                    // Role
+            `UPDATE_STATUS_${status.toUpperCase()}`, // Action Type
+            'tbl_Requests',             // Table Affected
+            id,                         // Record ID
+            auditDetails,               // New Values
+            req                         // Request Object (for IP Address)
+        );
+        // ----------------------------------------------
+
+        res.json({ success: true, message: `Request successfully updated to ${status}` });
 
     } catch (err) {
         console.error("Update Status Error:", err);
