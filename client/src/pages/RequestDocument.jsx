@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { 
     Container, Typography, Card, CardContent, TextField, 
-    Button, MenuItem, Box, Stepper, Step, StepLabel, Alert, Divider 
+    Button, MenuItem, Box, Stepper, Step, StepLabel, Alert, Divider, InputLabel 
 } from '@mui/material';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload'; // Make sure to import this or remove the icon
 import { useNavigate } from 'react-router-dom';
 
-const steps = ['Select Document', 'Purpose & Details', 'Review'];
+const steps = ['Select Document', 'Purpose & File', 'Review'];
 
 const RequestDocument = () => {
     const navigate = useNavigate();
@@ -19,6 +20,7 @@ const RequestDocument = () => {
         doc_type_id: '',
         purpose: ''
     });
+    const [selectedFile, setSelectedFile] = useState(null); // <--- NEW: File State
 
     // Fetch Menu on Load
     useEffect(() => {
@@ -33,17 +35,46 @@ const RequestDocument = () => {
         fetchTypes();
     }, []);
 
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            // Basic validation (Must be Image or PDF, max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                alert("File is too large! Max 5MB.");
+                return;
+            }
+            setSelectedFile(file);
+        }
+    };
+
     const handleSubmit = async () => {
-        const token = localStorage.getItem('token'); // Get the Key
+        const token = localStorage.getItem('token');
+        
+        // 1. Prepare FormData (Required for File Uploads)
+        const data = new FormData();
+        data.append('doc_type_id', formData.doc_type_id);
+        data.append('purpose', formData.purpose);
+        if (selectedFile) {
+            data.append('attachment', selectedFile); // 'attachment' matches the backend middleware
+        } else {
+            setError("Please upload a requirement (ID or Document).");
+            return;
+        }
+
         try {
             await axios.post(
-                `${import.meta.env.VITE_API_BASE_URL}/requests/create`,
-                formData,
-                { headers: { Authorization: `Bearer ${token}` } } // Show the Key
+                `${import.meta.env.VITE_API_BASE_URL}/resident/submit-request`, // Updated URL
+                data,
+                { 
+                    headers: { 
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'multipart/form-data' // Crucial for files
+                    } 
+                }
             );
             
             alert("Request Submitted Successfully!");
-            navigate('/dashboard'); // Go back to dashboard
+            navigate('/dashboard'); 
             
         } catch (err) {
             console.error(err);
@@ -61,7 +92,6 @@ const RequestDocument = () => {
 
     const handleBack = () => setActiveStep((prev) => prev - 1);
 
-    // Find selected doc name for review
     const selectedDoc = docTypes.find(d => d.doc_type_id === formData.doc_type_id);
 
     return (
@@ -77,7 +107,7 @@ const RequestDocument = () => {
             </Stepper>
 
             <Card variant="outlined">
-                <CardContent sx={{ minHeight: '300px' }}>
+                <CardContent sx={{ minHeight: '350px' }}>
                     {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
                     {/* STEP 1: SELECT TYPE */}
@@ -101,26 +131,48 @@ const RequestDocument = () => {
                             
                             {selectedDoc && (
                                 <Alert severity="info" sx={{ mt: 3 }}>
-                                    <strong>Requirements:</strong> {JSON.parse(selectedDoc.requirements).join(', ')}
+                                    <strong>Requirements:</strong> {selectedDoc.requirements ? JSON.parse(selectedDoc.requirements).join(', ') : 'Valid ID'}
                                 </Alert>
                             )}
                         </Box>
                     )}
 
-                    {/* STEP 2: PURPOSE */}
+                    {/* STEP 2: PURPOSE & FILE */}
                     {activeStep === 1 && (
                         <Box>
-                            <Typography variant="h6" gutterBottom>Why do you need this?</Typography>
+                            <Typography variant="h6" gutterBottom>Details & Requirements</Typography>
+                            
                             <TextField
                                 label="Purpose of Request"
                                 multiline
-                                rows={4}
+                                rows={3}
                                 fullWidth
                                 placeholder="e.g., Employment Requirement, Scholarship Application, etc."
                                 value={formData.purpose}
                                 onChange={(e) => setFormData({...formData, purpose: e.target.value})}
-                                sx={{ mt: 2 }}
+                                sx={{ mt: 2, mb: 3 }}
                             />
+
+                            <Divider sx={{ mb: 2 }} />
+                            
+                            <Typography variant="subtitle2" gutterBottom>Upload Requirement (ID / Proof)</Typography>
+                            <Button
+                                variant="outlined"
+                                component="label"
+                                fullWidth
+                                sx={{ height: 50, borderStyle: 'dashed' }}
+                            >
+                                {selectedFile ? selectedFile.name : "Click to Upload Image or PDF"}
+                                <input
+                                    type="file"
+                                    hidden
+                                    accept="image/*,application/pdf"
+                                    onChange={handleFileChange}
+                                />
+                            </Button>
+                            <Typography variant="caption" color="textSecondary">
+                                Max Size: 5MB. Formats: JPG, PNG, PDF.
+                            </Typography>
                         </Box>
                     )}
 
@@ -132,9 +184,10 @@ const RequestDocument = () => {
                             <Typography><strong>Document:</strong> {selectedDoc?.type_name}</Typography>
                             <Typography><strong>Fee:</strong> ₱{selectedDoc?.base_fee}</Typography>
                             <Typography><strong>Purpose:</strong> {formData.purpose}</Typography>
+                            <Typography><strong>Attachment:</strong> {selectedFile ? selectedFile.name : "None"}</Typography>
                             
                             <Alert severity="warning" sx={{ mt: 3 }}>
-                                Note: Once submitted, you cannot edit this request. Payment will be collected at the Barangay Hall.
+                                Note: Once submitted, you cannot edit this request.
                             </Alert>
                         </Box>
                     )}
