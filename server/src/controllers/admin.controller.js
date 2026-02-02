@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import fs from 'fs';   // <--- NEW IMPORT
 import path from 'path'; // <--- NEW IMPORT
+import { logAction } from '../services/audit.service.js';
 
 // HELPER: Scan the 'uploads' folder to find a file matching the Reference No.
 const findFileForRequest = (refNo) => {
@@ -158,7 +159,23 @@ export const updateRequestStatus = async (req, res) => {
             "UPDATE tbl_Requests SET request_status = ?, processed_by = ? WHERE request_id = ?",
             [status, req.user.id, id]
         );
+        // AUDIT LOGGING
+        await conn.query(
+    "UPDATE tbl_Requests SET request_status = ?, processed_by = ? WHERE request_id = ?",
+    [status, req.user.id, id]
+);
 
+        // Audit Log the action
+        // This fulfills FR13: "Log critical data modification"
+        await logAction(
+            req.user.id,           // Who: Admin ID
+            'Admin',               // Role
+            `UPDATE_STATUS_${status.toUpperCase()}`, // Action: e.g., UPDATE_STATUS_APPROVED
+            'tbl_Requests',        // Table
+            id,                    // Record ID
+            { status: status, reason: reason, or_number: or_number }, // Details
+            req                    // Request object (to get IP)
+        );
         if (status === 'Rejected' && reason) {
             await conn.query("UPDATE tbl_Requests SET rejection_reason = ? WHERE request_id = ?", [reason, id]);
         }
