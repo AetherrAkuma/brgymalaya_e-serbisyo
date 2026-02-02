@@ -40,8 +40,14 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/resident', residentRoutes);
 
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`[E-Serbisyo] Server running on http://localhost:${PORT}`);
-  console.log(`[Architecture] Business Logic Layer Active`);
-});
+// 1. Export the app so Jest can use it
+export default app;
+
+// 2. Only start the server if we are NOT testing
+// Jest automatically sets NODE_ENV to 'test', so this block is skipped during tests.
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`[E-Serbisyo] Server running on http://localhost:${PORT}`);
+    console.log(`[Architecture] Business Logic Layer Active`);
+  });
+}

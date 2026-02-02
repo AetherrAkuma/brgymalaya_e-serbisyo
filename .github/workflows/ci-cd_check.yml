@@ -3,13 +3,13 @@ name: CI Bot (Client & Server)
 # Trigger: Run on any push to main or any Pull Request
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
 
 jobs:
   validate-code:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     
     steps:
     # 1. Download your code to the bot's computer
@@ -34,7 +34,7 @@ jobs:
     - name: Build/Test Server
       # If you don't have a "build" script in server, use "node index.js" or similar to check syntax
       # Ideally, add "test": "echo 'No tests'" to server package.json so this passes
-      run: cd server && node server.js
+      run: cd server && npm test
 
     # 4. Check the CLIENT (React)
     - name: Install Client Deps
