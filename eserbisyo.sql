@@ -1,190 +1,154 @@
--- 1. CLEANUP (Start Fresh)
-DROP DATABASE IF EXISTS `e_serbisyo_db`;
-CREATE DATABASE `e_serbisyo_db` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-USE `e_serbisyo_db`;
+-- E-Serbisyo Database Schema
+-- Run this script to initialize the 10 core tables based on Table 3.6
 
--- ==========================================
--- 2. INDEPENDENT TABLES (Create these first)
--- ==========================================
+-- 1. Barangay Officials (Created first as it is referenced by many tables)
+CREATE TABLE IF NOT EXISTS tbl_BarangayOfficials (
+    user_id INT AUTO_INCREMENT PRIMARY KEY,
+    official_id VARCHAR(50) UNIQUE NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    email_official VARCHAR(255) UNIQUE NOT NULL,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL, -- SHA256 Hash
+    role ENUM('Super Admin', 'Secretary', 'Treasurer', 'Captain') NOT NULL,
+    account_status ENUM('Active', 'Inactive', 'Suspended') DEFAULT 'Active',
+    auth_token VARCHAR(255),
+    last_login DATETIME
+);
 
--- Residents Table
-CREATE TABLE `tbl_residents` (
-  `resident_id` int(11) NOT NULL AUTO_INCREMENT,
-  `first_name` varchar(100) NOT NULL,
-  `middle_name` varchar(100) DEFAULT NULL,
-  `last_name` varchar(100) NOT NULL,
-  `date_of_birth` date NOT NULL,
-  `civil_status` varchar(50) DEFAULT NULL,
-  `address_street` text NOT NULL,
-  `email_address` varchar(150) NOT NULL,
-  `contact_number` varchar(50) NOT NULL,
-  `password_hash` varchar(255) NOT NULL,
-  `id_proof_image` varchar(255) DEFAULT NULL,
-  `account_status` enum('Active','Pending','Banned') DEFAULT 'Pending',
-  `created_at` timestamp NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`resident_id`),
-  UNIQUE KEY `email_address` (`email_address`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 2. Residents
+CREATE TABLE IF NOT EXISTS tbl_Residents (
+    resident_id INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(100) NOT NULL,
+    middle_name VARCHAR(100),
+    last_name VARCHAR(100) NOT NULL,
+    date_of_birth DATE NOT NULL,
+    civil_status ENUM('Single', 'Married', 'Widowed', 'Divorced') NOT NULL,
+    address_street VARCHAR(255) NOT NULL,
+    email_address VARCHAR(255) UNIQUE NOT NULL,
+    contact_number VARCHAR(255) NOT NULL, -- Sized for AES256 Encrypted String
+    password_hash VARCHAR(255) NOT NULL,  -- SHA256 Hash
+    id_proof_image VARCHAR(255),          -- Encrypted File Path
+    account_status ENUM('Pending', 'Active', 'Blocked') DEFAULT 'Pending'
+);
 
--- Officials Table (Admins)
-CREATE TABLE `tbl_barangayofficials` (
-  `user_id` int(11) NOT NULL AUTO_INCREMENT,
-  `official_id` varchar(20) NOT NULL,
-  `full_name` varchar(100) NOT NULL,
-  `username` varchar(50) NOT NULL,
-  `email_official` varchar(100) NOT NULL,
-  `password_hash` varchar(255) NOT NULL,
-  `role` varchar(50) NOT NULL,
-  `account_status` varchar(20) DEFAULT 'Active',
-  `last_login` datetime DEFAULT NULL,
-  PRIMARY KEY (`user_id`),
-  UNIQUE KEY `official_id` (`official_id`),
-  UNIQUE KEY `username` (`username`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 3. Document Types
+CREATE TABLE IF NOT EXISTS tbl_DocumentTypes (
+    doc_type_id INT AUTO_INCREMENT PRIMARY KEY,
+    type_name VARCHAR(150) NOT NULL,
+    description TEXT,
+    base_fee DECIMAL(10, 2) DEFAULT 0.00,
+    requirements TEXT,
+    template_file VARCHAR(255),
+    layout_config JSON,
+    paper_size VARCHAR(50) DEFAULT 'A4',
+    validity_days INT DEFAULT 180,
+    is_available BOOLEAN DEFAULT TRUE,
+    updated_by INT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (updated_by) REFERENCES tbl_BarangayOfficials(user_id) ON DELETE SET NULL
+);
 
--- Document Types (Price List)
-CREATE TABLE `tbl_documenttypes` (
-  `doc_type_id` int(11) NOT NULL AUTO_INCREMENT,
-  `type_name` varchar(100) NOT NULL,
-  `description` text DEFAULT NULL,
-  `base_fee` decimal(10,2) DEFAULT 0.00,
-  `requirements` text DEFAULT NULL,
-  `template_file` varchar(255) DEFAULT NULL,
-  `is_available` tinyint(1) DEFAULT 1,
-  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`doc_type_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 4. Digital Signatures
+CREATE TABLE IF NOT EXISTS tbl_DigitalSignatures (
+    signature_id INT AUTO_INCREMENT PRIMARY KEY,
+    official_id INT NOT NULL,
+    signature_blob VARCHAR(255) NOT NULL, -- Path to Encrypted Blob
+    file_type VARCHAR(50),
+    checksum VARCHAR(255),
+    encryption_key VARCHAR(255),
+    status ENUM('Active', 'Revoked') DEFAULT 'Active',
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expiry_date DATETIME,
+    FOREIGN KEY (official_id) REFERENCES tbl_BarangayOfficials(user_id) ON DELETE CASCADE
+);
 
--- System Settings
-CREATE TABLE `tbl_systemsettings` (
-  `setting_id` int(11) NOT NULL AUTO_INCREMENT,
-  `setting_key` varchar(100) NOT NULL,
-  `setting_value` text NOT NULL,
-  `description` text DEFAULT NULL,
-  `last_updated` timestamp NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`setting_id`),
-  UNIQUE KEY `setting_key` (`setting_key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 5. Announcements
+CREATE TABLE IF NOT EXISTS tbl_Announcements (
+    announcement_id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    target_audience ENUM('All', 'Residents', 'Officials') DEFAULT 'All',
+    content_body TEXT NOT NULL,
+    image_path VARCHAR(255),
+    is_pinned BOOLEAN DEFAULT FALSE,
+    status ENUM('Draft', 'Published', 'Archived') DEFAULT 'Draft',
+    date_posted DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expiry_date DATETIME,
+    posted_by INT,
+    FOREIGN KEY (posted_by) REFERENCES tbl_BarangayOfficials(user_id) ON DELETE SET NULL
+);
 
--- ==========================================
--- 3. DEPENDENT TABLES (Link to the ones above)
--- ==========================================
+-- 6. System Settings
+CREATE TABLE IF NOT EXISTS tbl_SystemSettings (
+    setting_id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(100) UNIQUE NOT NULL,
+    setting_value TEXT NOT NULL,
+    description VARCHAR(255),
+    category VARCHAR(100),
+    data_type ENUM('String', 'Boolean', 'Integer', 'JSON') DEFAULT 'String',
+    is_encrypted BOOLEAN DEFAULT FALSE,
+    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_by INT,
+    FOREIGN KEY (updated_by) REFERENCES tbl_BarangayOfficials(user_id) ON DELETE SET NULL
+);
 
--- Requests (Links to Resident & DocType & Official)
-CREATE TABLE `tbl_requests` (
-  `request_id` int(11) NOT NULL AUTO_INCREMENT,
-  `resident_id` int(11) NOT NULL,
-  `doc_type_id` int(11) NOT NULL,
-  `reference_no` varchar(50) NOT NULL,
-  `purpose` text NOT NULL,
-  `request_status` enum('Pending','Processing','ForPayment','Approved','Completed','Rejected') DEFAULT 'Pending',
-  `rejection_reason` text DEFAULT NULL,
-  `qr_code_string` text DEFAULT NULL,
-  `date_requested` timestamp NULL DEFAULT current_timestamp(),
-  `pickup_date` datetime DEFAULT NULL,
-  `processed_by` int(11) DEFAULT NULL,
-  PRIMARY KEY (`request_id`),
-  UNIQUE KEY `reference_no` (`reference_no`),
-  KEY `resident_id` (`resident_id`),
-  KEY `doc_type_id` (`doc_type_id`),
-  KEY `processed_by` (`processed_by`),
-  CONSTRAINT `fk_request_resident` FOREIGN KEY (`resident_id`) REFERENCES `tbl_residents` (`resident_id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_request_doctype` FOREIGN KEY (`doc_type_id`) REFERENCES `tbl_documenttypes` (`doc_type_id`),
-  CONSTRAINT `fk_request_official` FOREIGN KEY (`processed_by`) REFERENCES `tbl_barangayofficials` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 7. Requests (The Core Workflow Table)
+CREATE TABLE IF NOT EXISTS tbl_Requests (
+    request_id INT AUTO_INCREMENT PRIMARY KEY,
+    resident_id INT NOT NULL,
+    doc_type_id INT NOT NULL,
+    reference_no VARCHAR(100) UNIQUE NOT NULL,
+    purpose VARCHAR(255) NOT NULL,
+    rejection_reason TEXT,
+    request_status ENUM('Pending', 'For Verification', 'For Payment', 'Processing', 'Ready for Pickup', 'Issued', 'Rejected', 'Cancelled') DEFAULT 'Pending',
+    date_requested DATETIME DEFAULT CURRENT_TIMESTAMP,
+    qr_code_string VARCHAR(255) UNIQUE,
+    pickup_date DATETIME,
+    processed_by INT,
+    FOREIGN KEY (resident_id) REFERENCES tbl_Residents(resident_id) ON DELETE CASCADE,
+    FOREIGN KEY (doc_type_id) REFERENCES tbl_DocumentTypes(doc_type_id) ON DELETE RESTRICT,
+    FOREIGN KEY (processed_by) REFERENCES tbl_BarangayOfficials(user_id) ON DELETE SET NULL
+);
 
--- Payments (Links to Request & Official)
-CREATE TABLE `tbl_payments` (
-  `payment_id` int(11) NOT NULL AUTO_INCREMENT,
-  `request_id` int(11) NOT NULL,
-  `amount_paid` decimal(10,2) NOT NULL,
-  `or_number` varchar(50) NOT NULL,
-  `payment_date` timestamp NULL DEFAULT current_timestamp(),
-  `treasurer_id` int(11) NOT NULL,
-  `payment_status` enum('Paid','Void') DEFAULT 'Paid',
-  `receipt_copy` varchar(255) DEFAULT NULL,
-  PRIMARY KEY (`payment_id`),
-  UNIQUE KEY `or_number` (`or_number`),
-  KEY `request_id` (`request_id`),
-  KEY `treasurer_id` (`treasurer_id`),
-  CONSTRAINT `fk_payment_request` FOREIGN KEY (`request_id`) REFERENCES `tbl_requests` (`request_id`),
-  CONSTRAINT `fk_payment_official` FOREIGN KEY (`treasurer_id`) REFERENCES `tbl_barangayofficials` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 8. Payments
+CREATE TABLE IF NOT EXISTS tbl_Payments (
+    payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    request_id INT UNIQUE NOT NULL,
+    amount_paid DECIMAL(10, 2) NOT NULL,
+    or_number VARCHAR(100) UNIQUE NOT NULL,
+    payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    treasurer_id INT,
+    payment_status ENUM('Unpaid', 'Paid', 'Refunded', 'Exempted') DEFAULT 'Unpaid',
+    payor_name VARCHAR(255) NOT NULL,
+    receipt_copy VARCHAR(255),
+    audit_hash VARCHAR(255),
+    FOREIGN KEY (request_id) REFERENCES tbl_Requests(request_id) ON DELETE CASCADE,
+    FOREIGN KEY (treasurer_id) REFERENCES tbl_BarangayOfficials(user_id) ON DELETE SET NULL
+);
 
--- Announcements (Links to Official)
-CREATE TABLE `tbl_announcements` (
-  `announcement_id` int(11) NOT NULL AUTO_INCREMENT,
-  `title` varchar(200) NOT NULL,
-  `content_body` text NOT NULL,
-  `target_audience` enum('Public','Residents') DEFAULT 'Public',
-  `image_path` varchar(255) DEFAULT NULL,
-  `is_pinned` tinyint(1) DEFAULT 0,
-  `expiry_date` date DEFAULT NULL,
-  `posted_by` int(11) NOT NULL,
-  `date_posted` timestamp NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`announcement_id`),
-  KEY `posted_by` (`posted_by`),
-  CONSTRAINT `fk_announcement_official` FOREIGN KEY (`posted_by`) REFERENCES `tbl_barangayofficials` (`user_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+-- 9. Audit Logs (Immutable Ledger)
+CREATE TABLE IF NOT EXISTS tbl_AuditLogs (
+    log_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL, -- Intentionally left without strict FK to support both Residents and Officials
+    table_affected VARCHAR(100),
+    record_id INT,
+    action_type VARCHAR(100) NOT NULL,
+    old_value JSON,
+    new_value JSON,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ip_address VARCHAR(45),
+    user_type ENUM('Resident', 'Official', 'System') NOT NULL
+);
 
--- Digital Signatures (Links to Official)
-CREATE TABLE `tbl_digitalsignatures` (
-  `signature_id` int(11) NOT NULL AUTO_INCREMENT,
-  `official_id` int(11) NOT NULL,
-  `signature_blob` varchar(255) NOT NULL,
-  `checksum` varchar(255) NOT NULL,
-  `status` enum('Active','Revoked') DEFAULT 'Active',
-  `uploaded_at` timestamp NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`signature_id`),
-  KEY `official_id` (`official_id`),
-  CONSTRAINT `fk_signature_official` FOREIGN KEY (`official_id`) REFERENCES `tbl_barangayofficials` (`user_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- Audit Logs
-CREATE TABLE `tbl_auditlogs` (
-  `log_id` int(11) NOT NULL AUTO_INCREMENT,
-  `user_id` int(11) NOT NULL,
-  `user_type` enum('Resident','Official') NOT NULL,
-  `action_type` varchar(100) NOT NULL,
-  `table_affected` varchar(50) DEFAULT NULL,
-  `record_id` int(11) DEFAULT NULL,
-  `old_value` text DEFAULT NULL,
-  `new_value` text DEFAULT NULL,
-  `ip_address` varchar(45) DEFAULT NULL,
-  `timestamp` timestamp NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`log_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- Password Resets
-CREATE TABLE `tbl_passwordresets` (
-  `reset_id` int(11) NOT NULL AUTO_INCREMENT,
-  `user_id` int(11) NOT NULL,
-  `user_type` enum('Resident','Official') NOT NULL,
-  `token_hash` varchar(255) NOT NULL,
-  `expires_at` datetime NOT NULL,
-  `is_used` tinyint(1) DEFAULT 0,
-  `created_at` timestamp NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`reset_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- ==========================================
--- 4. SEED DATA (Default Accounts & Settings)
--- ==========================================
-
--- Default Officials (Password: admin123)
-INSERT INTO `tbl_barangayofficials` (`user_id`, `official_id`, `full_name`, `username`, `email_official`, `password_hash`, `role`, `account_status`) VALUES
-(1, 'OFF-001', 'Hon. Juan Dela Cruz', 'kap_juan', 'captain@barangay.com', '$2b$10$eq/.he49wVP78C5XzAUUnew9LSxXqheOfAkt.yEyNdXpb.vOsS2uq', 'Captain', 'Active'),
-(2, 'OFF-002', 'Maria Santos', 'sec_maria', 'secretary@barangay.com', '$2b$10$eq/.he49wVP78C5XzAUUnew9LSxXqheOfAkt.yEyNdXpb.vOsS2uq', 'Secretary', 'Active'),
-(3, 'OFF-003', 'Pedro Penduko', 'treas_pedro', 'treasurer@barangay.com', '$2b$10$eq/.he49wVP78C5XzAUUnew9LSxXqheOfAkt.yEyNdXpb.vOsS2uq', 'Treasurer', 'Active'),
-(4, 'OFF-004', 'Kgd. Jose Rizal', 'kag_jose', 'kagawad@barangay.com', '$2b$10$eq/.he49wVP78C5XzAUUnew9LSxXqheOfAkt.yEyNdXpb.vOsS2uq', 'Kagawad', 'Active');
-
--- Default Document Types
-INSERT INTO `tbl_documenttypes` (`doc_type_id`, `type_name`, `base_fee`, `requirements`, `is_available`) VALUES
-(1, 'Barangay Clearance', 50.00, '["Valid ID", "Cedula"]', 1),
-(2, 'Certificate of Indigency', 0.00, '["Letter of Request"]', 1),
-(3, 'Barangay ID', 100.00, '["1x1 Picture", "Valid ID"]', 1),
-(4, 'Business Clearance', 500.00, '["DTI Registration", "Contract of Lease"]', 1);
-
--- Default Settings
-INSERT INTO `tbl_systemsettings` (`setting_key`, `setting_value`, `description`) VALUES
-('BARANGAY_NAME', 'Barangay Malaya', 'Official Name of the LGU');
+-- 10. Password Resets
+CREATE TABLE IF NOT EXISTS tbl_PasswordReset (
+    reset_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL, -- Can map to Resident or Official
+    token_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    ip_request VARCHAR(45),
+    user_agent TEXT,
+    expires_at DATETIME NOT NULL,
+    attempt_count INT DEFAULT 0,
+    is_used BOOLEAN DEFAULT FALSE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
