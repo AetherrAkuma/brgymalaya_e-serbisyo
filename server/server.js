@@ -605,6 +605,164 @@ app.put('/api/v1/residents/me/id-proof', verifyJWT, roleGuard(['Resident']), asy
     }
 });
 
+// ==========================================
+// PHASE 6: FINANCIAL ENCODING & FINAL VALIDATION
+// ==========================================
+
+// Endpoint 25: Get Treasurer's Payment Queue (Treasurer / Super Admin)
+app.get('/api/v1/payments/queue', verifyJWT, roleGuard(['Treasurer', 'Super Admin']), async (req, res) => {
+    try {
+        const query = `
+            SELECT r.request_id, r.reference_no, res.first_name, res.last_name, dt.type_name, dt.base_fee, r.date_requested
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.request_status = 'For Payment'
+            ORDER BY r.date_requested ASC
+        `;
+        const [paymentQueue] = await db.query(query);
+        res.status(200).json({ status: 'success', data: paymentQueue });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 26: Process a Payment / Update Payment Status (Treasurer / Super Admin)
+app.post('/api/v1/payments', verifyJWT, roleGuard(['Treasurer', 'Super Admin']), async (req, res) => {
+    try {
+        const { request_id, amount_paid, or_number, payor_name, payment_status } = req.body;
+        const treasurer_id = req.user.id;
+
+        // Ensure critical fields exist
+        if (!request_id || amount_paid === undefined || !or_number || !payor_name) {
+            return res.status(400).json({ error: 'request_id, amount_paid, or_number, and payor_name are required.' });
+        }
+
+        // Apply toggable payment status (defaults to 'Paid' if not supplied)
+        const final_status = payment_status || 'Paid';
+        if (!['Unpaid', 'Paid', 'Refunded', 'Exempted'].includes(final_status)) {
+            return res.status(400).json({ error: "Invalid payment_status. Must be 'Unpaid', 'Paid', 'Refunded', or 'Exempted'." });
+        }
+
+        // 1. Upsert the payment record into tbl_Payments (Insert if new, Update if exists)
+        const insertPaymentQuery = `
+            INSERT INTO tbl_Payments (request_id, amount_paid, or_number, treasurer_id, payment_status, payor_name)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+                amount_paid = VALUES(amount_paid),
+                or_number = VALUES(or_number),
+                treasurer_id = VALUES(treasurer_id),
+                payment_status = VALUES(payment_status),
+                payor_name = VALUES(payor_name)
+        `;
+        await db.query(insertPaymentQuery, [request_id, amount_paid, or_number, treasurer_id, final_status, payor_name]);
+
+        // 2. Intelligent request routing depending on the payment outcome
+        let next_request_status = 'For Payment';
+        if (final_status === 'Paid' || final_status === 'Exempted') {
+            next_request_status = 'Processing'; // Cleared for printing
+        } else if (final_status === 'Refunded') {
+            next_request_status = 'Cancelled';
+        }
+
+        // Update the request status
+        const updateRequestQuery = `
+            UPDATE tbl_Requests 
+            SET request_status = ? 
+            WHERE request_id = ?
+        `;
+        await db.query(updateRequestQuery, [next_request_status, request_id]);
+
+        res.status(201).json({ 
+            status: 'success', 
+            message: `Payment successfully encoded as ${final_status}. Request is now ${next_request_status}.` 
+        });
+    } catch (error) {
+        // Handle Duplicate OR Number cleanly
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ error: 'Duplicate entry detected. The OR Number already exists on another transaction.' });
+        }
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 27: Mark Document as Exempted / Free (Treasurer / Super Admin)
+app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer', 'Super Admin']), async (req, res) => {
+    try {
+        const { request_id } = req.params;
+        const treasurer_id = req.user.id;
+        const { payor_name } = req.body; // usually the resident's name
+
+        if (!payor_name) return res.status(400).json({ error: 'payor_name is required for the audit log.' });
+
+        // Generate a pseudo OR number for exempted logs
+        const pseudo_or = `EXEMPT-${Date.now()}`;
+
+        const insertPaymentQuery = `
+            INSERT INTO tbl_Payments (request_id, amount_paid, or_number, treasurer_id, payment_status, payor_name)
+            VALUES (?, 0.00, ?, ?, 'Exempted', ?)
+        `;
+        await db.query(insertPaymentQuery, [request_id, pseudo_or, treasurer_id, payor_name]);
+
+        const updateRequestQuery = `
+            UPDATE tbl_Requests 
+            SET request_status = 'Processing' 
+            WHERE request_id = ? AND request_status = 'For Payment'
+        `;
+        await db.query(updateRequestQuery, [request_id]);
+
+        res.status(201).json({ status: 'success', message: 'Document marked as Exempted/Free. Request is now Processing.' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 28: Mark Request as Ready for Pickup (Secretary / Super Admin)
+app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+    try {
+        const { request_id } = req.params;
+
+        const updateQuery = `
+            UPDATE tbl_Requests 
+            SET request_status = 'Ready for Pickup' 
+            WHERE request_id = ? AND request_status = 'Processing'
+        `;
+        const [result] = await db.query(updateQuery, [request_id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(400).json({ error: 'Request must be in Processing state to be marked as Ready for Pickup.' });
+        }
+
+        console.log(`[EMAIL SIMULATION] Your request is printed and Ready for Pickup at the Barangay Hall.`);
+
+        res.status(200).json({ status: 'success', message: 'Request marked as Ready for Pickup.' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 29: Issue Document (Secretary / Super Admin)
+app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+    try {
+        const { request_id } = req.params;
+
+        const updateQuery = `
+            UPDATE tbl_Requests 
+            SET request_status = 'Issued', pickup_date = NOW()
+            WHERE request_id = ? AND request_status = 'Ready for Pickup'
+        `;
+        const [result] = await db.query(updateQuery, [request_id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(400).json({ error: 'Request must be Ready for Pickup before it can be Issued.' });
+        }
+
+        res.status(200).json({ status: 'success', message: 'Document successfully issued and recorded in the database.' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
 // Start the server
 app.listen(PORT, () => {
     console.log(`🚀 E-Serbisyo Server is running on http://localhost:${PORT}`);
