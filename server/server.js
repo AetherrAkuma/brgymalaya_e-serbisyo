@@ -413,6 +413,198 @@ app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Se
     }
 });
 
+// Endpoint 20.5: Manage Resident Account Status (Super Admin / Secretary)
+app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin', 'Secretary']), async (req, res) => {
+    try {
+        const { account_status } = req.body;
+        const { id } = req.params;
+
+        if (!['Pending', 'Active', 'Blocked'].includes(account_status)) {
+            return res.status(400).json({ error: "Invalid status. Must be 'Pending', 'Active', or 'Blocked'." });
+        }
+
+        const [result] = await db.query(
+            'UPDATE tbl_Residents SET account_status = ? WHERE resident_id = ?',
+            [account_status, id]
+        );
+
+        if (result.affectedRows === 0) return res.status(404).json({ error: 'Resident not found.' });
+
+        res.status(200).json({ status: 'success', message: `Resident account successfully marked as ${account_status}.` });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// ==========================================
+// PHASE 5: THE DOCUMENT REQUEST ENGINE
+// ==========================================
+
+// Endpoint 21: Submit a Document Request (Resident Only)
+app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), async (req, res) => {
+    try {
+        const { doc_type_id, purpose } = req.body;
+        const resident_id = req.user.id; // Automatically grabbed securely from the JWT
+
+        if (!doc_type_id || !purpose) {
+            return res.status(400).json({ error: 'doc_type_id and purpose are required.' });
+        }
+
+        // Active Request Constraint (5.2): Check if Resident already has a pending/processing request for this EXACT document type
+        const [existingActive] = await db.query(`
+            SELECT request_id FROM tbl_Requests 
+            WHERE resident_id = ? AND doc_type_id = ? 
+            AND request_status IN ('Pending', 'For Verification', 'For Payment', 'Processing', 'Ready for Pickup')
+        `, [resident_id, doc_type_id]);
+
+        if (existingActive.length > 0) {
+            return res.status(403).json({ 
+                error: 'You already have an active request for this document type. Please wait for it to be completed or rejected before filing another.' 
+            });
+        }
+
+        // Generate a Unique Reference Number (e.g., REQ-20260130-1234)
+        const dateString = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const randomStr = Math.floor(1000 + Math.random() * 9000);
+        const reference_no = `REQ-${dateString}-${randomStr}`;
+
+        // Insert the Request
+        const insertQuery = `
+            INSERT INTO tbl_Requests (resident_id, doc_type_id, reference_no, purpose, request_status)
+            VALUES (?, ?, ?, ?, 'Pending')
+        `;
+        const [result] = await db.query(insertQuery, [resident_id, doc_type_id, reference_no, purpose]);
+
+        // Email Hook Simulation (5.4)
+        console.log(`[EMAIL SIMULATION] Sent to Resident ID ${resident_id}: Your request ${reference_no} has been received and is Pending Verification.`);
+
+        res.status(201).json({ 
+            status: 'success', 
+            message: 'Document request submitted successfully.',
+            reference_no: reference_no,
+            request_id: result.insertId
+        });
+
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 22: View My Requests (Resident Only)
+app.get('/api/v1/requests/resident/me', verifyJWT, roleGuard(['Resident']), async (req, res) => {
+    try {
+        const resident_id = req.user.id;
+
+        const query = `
+            SELECT r.request_id, r.reference_no, dt.type_name, r.purpose, r.request_status, r.date_requested, r.pickup_date, r.rejection_reason
+            FROM tbl_Requests r
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.resident_id = ?
+            ORDER BY r.date_requested DESC
+        `;
+        const [requests] = await db.query(query, [resident_id]);
+
+        res.status(200).json({ status: 'success', data: requests });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 23: Get Pending Requests (Secretary / Super Admin)
+app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+    try {
+        const query = `
+            SELECT r.request_id, r.reference_no, res.first_name, res.last_name, res.id_proof_image, dt.type_name, r.purpose, r.date_requested
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.request_status = 'Pending'
+            ORDER BY r.date_requested ASC
+        `;
+        const [pendingRequests] = await db.query(query);
+
+        res.status(200).json({ status: 'success', data: pendingRequests });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 24: Initial Verification (Secretary / Super Admin)
+app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+    try {
+        const { action, rejection_reason } = req.body; // action: 'Approve' or 'Reject'
+        const { request_id } = req.params;
+        const official_id = req.user.id;
+
+        if (!['Approve', 'Reject'].includes(action)) {
+            return res.status(400).json({ error: "Invalid action. Must be 'Approve' or 'Reject'." });
+        }
+
+        if (action === 'Reject' && !rejection_reason) {
+            return res.status(400).json({ error: "A rejection_reason is required when rejecting a request." });
+        }
+
+        // Get document type info to check the fee
+        const [reqData] = await db.query(`
+            SELECT r.resident_id, dt.base_fee 
+            FROM tbl_Requests r 
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id 
+            WHERE r.request_id = ?
+        `, [request_id]);
+
+        if (reqData.length === 0) return res.status(404).json({ error: 'Request not found.' });
+
+        const resident_id = reqData[0].resident_id;
+        const base_fee = parseFloat(reqData[0].base_fee);
+        
+        let newStatus = '';
+        if (action === 'Reject') {
+            newStatus = 'Rejected';
+        } else if (action === 'Approve') {
+            // All approved requests must route to the Treasurer for transaction logging, even if free
+            newStatus = 'For Payment'; 
+        }
+
+        const updateQuery = `
+            UPDATE tbl_Requests 
+            SET request_status = ?, rejection_reason = ?, processed_by = ?
+            WHERE request_id = ? AND request_status = 'Pending'
+        `;
+        const [result] = await db.query(updateQuery, [newStatus, rejection_reason || null, official_id, request_id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(400).json({ error: 'Request is either already processed or does not exist.' });
+        }
+
+        // Email Hook Simulation (5.4)
+        console.log(`[EMAIL SIMULATION] Sent to Resident ID ${resident_id}: Your request status is now ${newStatus}.`);
+
+        res.status(200).json({ 
+            status: 'success', 
+            message: `Request successfully marked as ${newStatus}.`,
+            routed_to: newStatus
+        });
+
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 24.5: Update Resident ID Proof (Resident Only)
+app.put('/api/v1/residents/me/id-proof', verifyJWT, roleGuard(['Resident']), async (req, res) => {
+    try {
+        const { id_proof_filename } = req.body;
+        const resident_id = req.user.id;
+        
+        if (!id_proof_filename) return res.status(400).json({ error: 'id_proof_filename is required.' });
+        
+        await db.query('UPDATE tbl_Residents SET id_proof_image = ? WHERE resident_id = ?', [id_proof_filename, resident_id]);
+        res.status(200).json({ status: 'success', message: 'ID Proof updated successfully.' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
 // Start the server
 app.listen(PORT, () => {
     console.log(`🚀 E-Serbisyo Server is running on http://localhost:${PORT}`);
