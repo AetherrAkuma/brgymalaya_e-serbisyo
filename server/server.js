@@ -3,6 +3,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const db = require('./config/db');
+const crypto = require('crypto'); // Built-in for QR Hash generation
 
 // Phase 1.2 Utilities
 const { hashPassword, encryptData, decryptData } = require('./utils/crypto');
@@ -11,6 +12,11 @@ const { generateToken, verifyJWT, roleGuard } = require('./middleware/auth');
 const { sqlSanitizer } = require('./middleware/sanitizer');
 // Phase 1.4 File Handling
 const { encryptAndSaveFile, decryptFileBuffer } = require('./utils/fileCrypto');
+const upload = require('./middleware/upload');
+// Phase 7 PDF Engine
+const { generateBarangayPDF } = require('./utils/pdfGenerator');
+// Phase 8 Audit Logger
+const { logAction, logLogin, logStatusChange, logDocumentPrint, logPayment } = require('./utils/auditLogger');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -18,7 +24,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// Safety Net Middleware for JSON Parsing Errors (Fixes the PNG/JSON crash)
+// Safety Net Middleware for JSON Parsing Errors
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
         return res.status(400).json({ 
@@ -386,6 +392,26 @@ app.put('/api/v1/admin/document-types/:id', verifyJWT, roleGuard(['Super Admin',
         res.status(200).json({ status: 'success', message: 'Document type updated successfully.' });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// NEW Endpoint 19.5: Update Document Layout Config (Super Admin / Secretary)
+app.put('/api/v1/admin/document-types/:id/layout', verifyJWT, roleGuard(['Super Admin', 'Secretary']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { layout_config } = req.body; // Expected format: { "name": {"x": 10, "y": 20}, ... }
+
+        if (!layout_config || typeof layout_config !== 'object') {
+            return res.status(400).json({ error: 'A valid layout_config object is required.' });
+        }
+
+        const configString = JSON.stringify(layout_config);
+        const [result] = await db.query('UPDATE tbl_DocumentTypes SET layout_config = ? WHERE doc_type_id = ?', [configString, id]);
+
+        if (result.affectedRows === 0) return res.status(404).json({ error: 'Document type not found.' });
+        res.status(200).json({ status: 'success', message: 'Layout configuration updated successfully.' });
+    } catch (error) { 
+        res.status(500).json({ status: 'error', message: error.message }); 
     }
 });
 
@@ -763,8 +789,343 @@ app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary',
     }
 });
 
+// ==========================================
+// PHASE 7: DOCUMENT GENERATION & CRYPTOGRAPHY
+// ==========================================
+
+// Endpoint 30: Signature Vault - Upload Signature (Super Admin / Captain)
+app.post('/api/v1/admin/signatures/upload', verifyJWT, roleGuard(['Super Admin', 'Captain']), express.raw({ type: 'image/png', limit: '2mb' }), async (req, res) => {
+    try {
+        if (!Buffer.isBuffer(req.body)) return res.status(400).json({ error: 'No PNG signature provided in binary body.' });
+        
+        const filename = `sig_${req.user.id}_${Date.now()}.png.enc`;
+        encryptAndSaveFile(req.body, filename);
+
+        // Update tbl_DigitalSignatures
+        await db.query(`
+            INSERT INTO tbl_DigitalSignatures (official_id, signature_blob, status)
+            VALUES (?, ?, 'Active')
+            ON DUPLICATE KEY UPDATE signature_blob = VALUES(signature_blob), uploaded_at = NOW()
+        `, [req.user.id, filename]);
+
+        res.status(200).json({ status: 'success', message: 'Digital signature securely vaulted.', filename });
+    } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+// Endpoint 31: PDF Generation & QR Stamping (Secretary / Super Admin)
+app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+    try {
+        const { request_id } = req.params;
+
+        // 1. Fetch full request data with resident details, layout_config, AND template_file
+        const query = `
+            SELECT r.*, res.first_name, res.last_name, res.address_street, dt.type_name, dt.layout_config, dt.template_file
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.request_id = ? AND r.request_status = 'Processing'
+        `;
+        const [rows] = await db.query(query, [request_id]);
+        if (rows.length === 0) return res.status(404).json({ error: 'Request not found or not cleared for printing.' });
+        const requestData = rows[0];
+
+        // 2. Parse Layout Config
+        let layout = {};
+        try {
+            layout = JSON.parse(requestData.layout_config || '{}');
+        } catch (e) {
+            console.error("Layout Config Parse Error, using defaults.");
+        }
+
+        // 3. Fetch Active Captain Signature
+        const [sigRows] = await db.query("SELECT signature_blob FROM tbl_DigitalSignatures WHERE status = 'Active' LIMIT 1");
+        let sigBuffer = null;
+        if (sigRows.length > 0) {
+            sigBuffer = decryptFileBuffer(sigRows[0].signature_blob);
+        }
+
+        // 4. Fetch Document Template (Background) - Phase 7.1 Integration
+        let templateBuffer = null;
+        if (requestData.template_file) {
+            try {
+                templateBuffer = decryptFileBuffer(requestData.template_file);
+            } catch (e) {
+                console.error("Template decryption failed, using blank page:", e.message);
+            }
+        }
+
+        // 5. Generate Cryptographic QR String (Phase 7.3)
+        // Format: Hash(RefNo + Secret) - SHA256 per FR6
+        const secretKey = process.env.JWT_SECRET || 'brgy_secret';
+        const qrHash = crypto.createHash('sha256').update(requestData.reference_no + secretKey).digest('hex');
+        const verificationUrl = `https://brgy-eserbisyo.gov.ph/verify/${qrHash}`;
+
+        // Save hash to DB
+        await db.query("UPDATE tbl_Requests SET qr_code_string = ? WHERE request_id = ?", [qrHash, request_id]);
+
+        // 6. Generate the PDF with the layout config and template
+        const pdfBuffer = await generateBarangayPDF(requestData, sigBuffer, verificationUrl, layout, templateBuffer);
+
+        // 7. Serve the PDF
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=${requestData.reference_no}.pdf`);
+        res.send(pdfBuffer);
+
+    } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+// ==========================================
+// PHASE 7: DOCUMENT GENERATION & CRYPTOGRAPHY (Continued)
+// ==========================================
+
+// Endpoint 30.5: Template Upload (Background Document Template)
+// Using multer for file upload
+app.post('/api/v1/admin/document-types/:id/template', verifyJWT, roleGuard(['Super Admin', 'Secretary']), upload.single('file'), async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ error: 'No template file uploaded.' });
+        }
+
+        const fileBuffer = req.file.buffer;
+        const mimetype = req.file.mimetype;
+        
+        let fileExtension = '.bin';
+        if (mimetype.includes('image/jpeg')) fileExtension = '.jpg';
+        else if (mimetype.includes('image/png')) fileExtension = '.png';
+        else if (mimetype.includes('application/pdf')) fileExtension = '.pdf';
+
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const savedFilename = `template_${id}_${uniqueSuffix}${fileExtension}.enc`;
+
+        encryptAndSaveFile(fileBuffer, savedFilename);
+
+        // Update tbl_DocumentTypes.template_file
+        await db.query(
+            'UPDATE tbl_DocumentTypes SET template_file = ?, updated_by = ? WHERE doc_type_id = ?',
+            [savedFilename, req.user.id, id]
+        );
+
+        res.status(200).json({ 
+            status: 'success', 
+            message: 'Document template uploaded and encrypted successfully.',
+            filename: savedFilename 
+        });
+    } catch (error) { 
+        res.status(500).json({ status: 'error', message: error.message }); 
+    }
+});
+
+// Endpoint 32: Public QR Scanner Verification (7.4)
+app.get('/api/v1/public/verify/:qr_hash', async (req, res) => {
+    try {
+        const { qr_hash } = req.params;
+        const query = `
+            SELECT r.reference_no, r.request_status, dt.type_name, res.first_name, res.last_name, r.pickup_date
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.qr_code_string = ?
+        `;
+        const [rows] = await db.query(query, [qr_hash]);
+
+        if (rows.length === 0) {
+            return res.status(200).json({ status: 'invalid', message: 'This document record was not found or may be a forgery.' });
+        }
+
+        const doc = rows[0];
+        const isValid = (doc.request_status === 'Issued');
+
+        res.status(200).json({
+            status: isValid ? 'Valid' : 'Revoked/Invalid',
+            message: isValid ? 'This is an authentic Barangay Document.' : 'This document is no longer valid or has not been officially issued.',
+            details: {
+                reference: doc.reference_no,
+                document: doc.type_name,
+                owner: `${doc.first_name} ${doc.last_name}`,
+                issued_on: doc.pickup_date
+            }
+        });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==========================================
+// PHASE 8: SYSTEM ADMINISTRATION & AUDITING
+// ==========================================
+
+// Endpoint 33: Create Official Account (Super Admin Only)
+app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+    try {
+        const { official_id, full_name, email_official, username, password, role } = req.body;
+
+        // Validate required fields
+        if (!official_id || !full_name || !email_official || !username || !password || !role) {
+            return res.status(400).json({ error: 'All fields are required: official_id, full_name, email_official, username, password, role' });
+        }
+
+        // Validate role
+        const validRoles = ['Secretary', 'Treasurer', 'Captain'];
+        if (!validRoles.includes(role)) {
+            return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
+        }
+
+        // Check for duplicate username or email
+        const [existing] = await db.query(
+            'SELECT user_id FROM tbl_BarangayOfficials WHERE username = ? OR email_official = ?',
+            [username, email_official]
+        );
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'Username or email already exists.' });
+        }
+
+        // Hash password and create official
+        const hashedPassword = hashPassword(password);
+        
+        const insertQuery = `
+            INSERT INTO tbl_BarangayOfficials 
+            (official_id, full_name, email_official, username, password_hash, role, account_status)
+            VALUES (?, ?, ?, ?, ?, ?, 'Active')
+        `;
+        
+        const [result] = await db.query(insertQuery, [
+            official_id, full_name, email_official, username, hashedPassword, role
+        ]);
+
+        // Audit Log
+        await logAction({
+            user_id: req.user.id,
+            user_type: 'Official',
+            table_affected: 'tbl_BarangayOfficials',
+            record_id: result.insertId,
+            action_type: 'CREATE',
+            old_value: null,
+            new_value: { official_id, username, role },
+            ip_address: req.ip
+        });
+
+        res.status(201).json({ 
+            status: 'success', 
+            message: `Official account created successfully.`,
+            official_id: result.insertId
+        });
+    } catch (error) { 
+        res.status(500).json({ status: 'error', message: error.message }); 
+    }
+});
+
+// Endpoint 34: Update Official Account Status (Super Admin Only)
+app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { account_status } = req.body;
+
+        // Validate status
+        const validStatuses = ['Active', 'Inactive', 'Suspended'];
+        if (!validStatuses.includes(account_status)) {
+            return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+        }
+
+        // Get current status for audit
+        const [current] = await db.query('SELECT account_status, username, role FROM tbl_BarangayOfficials WHERE user_id = ?', [id]);
+        if (current.length === 0) {
+            return res.status(404).json({ error: 'Official account not found.' });
+        }
+
+        // Prevent Super Admin from deactivating themselves
+        if (parseInt(id) === req.user.id) {
+            return res.status(400).json({ error: 'You cannot modify your own account status.' });
+        }
+
+        const [result] = await db.query(
+            'UPDATE tbl_BarangayOfficials SET account_status = ? WHERE user_id = ?',
+            [account_status, id]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Official account not found.' });
+        }
+
+        // Audit Log
+        await logAction({
+            user_id: req.user.id,
+            user_type: 'Official',
+            table_affected: 'tbl_BarangayOfficials',
+            record_id: id,
+            action_type: 'STATUS_CHANGE',
+            old_value: { account_status: current[0].account_status },
+            new_value: { account_status },
+            ip_address: req.ip
+        });
+
+        res.status(200).json({ 
+            status: 'success', 
+            message: `Official account status updated to ${account_status}.` 
+        });
+    } catch (error) { 
+        res.status(500).json({ status: 'error', message: error.message }); 
+    }
+});
+
+// Endpoint 35: View Audit Logs (Super Admin Only) - Forensic Dashboard
+app.get('/api/v1/admin/audit-logs', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 100;
+        const offset = parseInt(req.query.offset) || 0;
+        
+        // Ensure reasonable limits
+        const safeLimit = Math.min(Math.max(limit, 1), 500);
+        
+        const query = `
+            SELECT log_id, user_id, user_type, table_affected, record_id, action_type, old_value, new_value, timestamp, ip_address
+            FROM tbl_AuditLogs
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+        `;
+        
+        const [logs] = await db.query(query, [safeLimit, offset]);
+
+        // Parse JSON fields
+        const formattedLogs = logs.map(log => ({
+            ...log,
+            old_value: log.old_value ? JSON.parse(log.old_value) : null,
+            new_value: log.new_value ? JSON.parse(log.new_value) : null
+        }));
+
+        res.status(200).json({ 
+            status: 'success', 
+            data: formattedLogs,
+            pagination: {
+                limit: safeLimit,
+                offset: offset
+            }
+        });
+    } catch (error) { 
+        res.status(500).json({ status: 'error', message: error.message }); 
+    }
+});
+
+// Endpoint 36: View System Settings (Super Admin Only)
+app.get('/api/v1/admin/settings', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+    try {
+        const query = `
+            SELECT setting_id, setting_key, setting_value, description, category, data_type, is_encrypted, last_updated
+            FROM tbl_SystemSettings
+            ORDER BY category, setting_key
+        `;
+        
+        const [settings] = await db.query(query);
+        
+        res.status(200).json({ 
+            status: 'success', 
+            data: settings 
+        });
+    } catch (error) { 
+        res.status(500).json({ status: 'error', message: error.message }); 
+    }
+});
+
 // Start the server
 app.listen(PORT, () => {
     console.log(`🚀 E-Serbisyo Server is running on http://localhost:${PORT}`);
-    console.log(`👉 Phase 3 Setup: POST http://localhost:${PORT}/api/v1/setup/seed-public`);
 });
