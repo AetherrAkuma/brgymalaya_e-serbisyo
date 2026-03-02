@@ -25,7 +25,7 @@ const AdminDashboard = () => {
                 const token = localStorage.getItem('token');
                 // Ensure this matches the updated server route
                 const res = await axios.get(
-                    `${import.meta.env.VITE_API_BASE_URL}/admin/settings`,
+                    `${import.meta.env.VITE_API_BASE_URL}/v1/admin/settings`,
                     { headers: { Authorization: `Bearer ${token}` } }
                 );
                 

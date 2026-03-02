@@ -18,7 +18,7 @@ const AdminLogin = () => {
         
         try {
             // Hit the distinct Admin API
-            const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, credentials);
+            const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/v1/auth/login`, credentials);
             
             if (res.data.success) {
                 // Store token (we can call it 'admin_token' to distinguish from residents)

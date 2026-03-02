@@ -14,10 +14,12 @@ const Register = () => {
         first_name: '',
         middle_name: '',
         last_name: '',
+        date_of_birth: '',
+        civil_status: 'Single',
+        address_street: '',
         email_address: '',
-        password: '',
         contact_number: '',
-        address_street: ''
+        password: ''
     });
 
     const [status, setStatus] = useState({ type: '', message: '' });
@@ -34,7 +36,7 @@ const Register = () => {
 
         try {
             const response = await axios.post(
-                `${import.meta.env.VITE_API_BASE_URL}/auth/resident/register`,
+                `${import.meta.env.VITE_API_BASE_URL}/v1/auth/resident/register`,
                 formData
             );
             
@@ -108,6 +110,22 @@ const Register = () => {
                                     required 
                                     onChange={handleChange} 
                                 />
+                            </Grid>
+                            <Grid item xs={12} sm={6}>
+                                <TextField 
+                                    fullWidth 
+                                    select 
+                                    label="Civil Status" 
+                                    name="civil_status" 
+                                    value={formData.civil_status}
+                                    onChange={handleChange} 
+                                    required
+                                >
+                                    <MenuItem value="Single">Single</MenuItem>
+                                    <MenuItem value="Married">Married</MenuItem>
+                                    <MenuItem value="Widowed">Widowed</MenuItem>
+                                    <MenuItem value="Divorced">Divorced</MenuItem>
+                                </TextField>
                             </Grid>
                         </Grid>
 
