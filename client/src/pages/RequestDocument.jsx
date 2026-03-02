@@ -26,7 +26,7 @@ const RequestDocument = () => {
     useEffect(() => {
         const fetchTypes = async () => {
             try {
-                const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/requests/types`);
+            const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/public/document-types`);
                 setDocTypes(res.data.data);
             } catch (err) {
                 console.error("Failed to load types");
@@ -63,7 +63,7 @@ const RequestDocument = () => {
 
         try {
             await axios.post(
-                `${import.meta.env.VITE_API_BASE_URL}/resident/submit-request`, // Updated URL
+                `${import.meta.env.VITE_API_BASE_URL}/requests`, // Updated URL
                 data,
                 { 
                     headers: { 

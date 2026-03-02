@@ -13,7 +13,7 @@ const TransactionHistory = () => {
             const token = localStorage.getItem('token');
             try {
                 const res = await axios.get(
-                    `${import.meta.env.VITE_API_BASE_URL}/requests/history`,
+                    `${import.meta.env.VITE_API_BASE_URL}/requests/resident/me`,
                     { headers: { Authorization: `Bearer ${token}` } }
                 );
                 setRequests(res.data.data);

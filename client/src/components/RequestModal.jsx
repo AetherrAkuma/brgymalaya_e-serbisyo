@@ -51,7 +51,7 @@ const RequestModal = ({ open, handleClose, request, refreshData }) => {
             
             // NOTE: We removed 'responseType: blob' because we now expect JSON
             const response = await axios.get(
-                `${import.meta.env.VITE_API_BASE_URL}/admin/file/${filename}`,
+                `${import.meta.env.VITE_API_BASE_URL}/files/${filename}`,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 

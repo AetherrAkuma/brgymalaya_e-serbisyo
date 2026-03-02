@@ -23,7 +23,7 @@ const AdminRequests = () => {
         setLoading(true);
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/admin/requests`, {
+            const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/requests/pending`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data.success) {
