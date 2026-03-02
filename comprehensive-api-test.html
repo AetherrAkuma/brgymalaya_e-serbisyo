@@ -1,0 +1,1635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Serbisyo API Comprehensive Test Suite</title>
+    <style>
+        :root {
+            --primary: #007bff;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --info: #17a2b8;
+            --dark: #343a40;
+            --light: #f8f9fa;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        
+        h1 {
+            color: var(--dark);
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 10px;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .sidebar {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            height: fit-content;
+        }
+        
+        .main-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .auth-section {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        
+        .token-display {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .nav-tab {
+            padding: 12px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: left;
+            width: 100%;
+        }
+        
+        .nav-tab:hover {
+            background: #e9ecef;
+        }
+        
+        .nav-tab.active {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        .endpoint-card {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .endpoint-card:hover {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .method-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+            margin-right: 10px;
+            color: white;
+        }
+        
+        .method-GET { background-color: var(--info); }
+        .method-POST { background-color: var(--primary); }
+        .method-PUT { background-color: var(--warning); color: #000; }
+        .method-DELETE { background-color: var(--danger); }
+        
+        .endpoint-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 10px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+        
+        .file-input {
+            padding: 10px;
+            background: white;
+            border: 2px dashed #dee2e6;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+        
+        .btn-primary { background-color: var(--primary); color: white; }
+        .btn-success { background-color: var(--success); color: white; }
+        .btn-warning { background-color: var(--warning); color: #000; }
+        .btn-danger { background-color: var(--danger); color: white; }
+        .btn-info { background-color: var(--info); color: white; }
+        
+        .btn:hover {
+            opacity: 0.8;
+            transform: translateY(-1px);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .response-section {
+            margin-top: 20px;
+            background: #212529;
+            color: #fff;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .response-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #495057;
+        }
+        
+        .status-code {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+        
+        .status-2xx { background-color: var(--success); color: white; }
+        .status-4xx { background-color: var(--warning); color: #000; }
+        .status-5xx { background-color: var(--danger); color: white; }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        .role-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            background: #6c757d;
+            color: white;
+            margin-left: 10px;
+        }
+        
+        .required {
+            color: var(--danger);
+            font-weight: bold;
+        }
+        
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .grid-2, .grid-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 E-Serbisyo API Comprehensive Test Suite</h1>
+    
+    <div class="dashboard">
+        <div class="sidebar">
+            <div class="auth-section">
+                <h3>🔑 Authentication</h3>
+                <div class="form-group">
+                    <label for="token">JWT Token</label>
+                    <textarea id="token" placeholder="Paste JWT Token here"></textarea>
+                </div>
+                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                    <button class="btn btn-info" onclick="setupDatabase()">Setup DB</button>
+                    <button class="btn btn-warning" onclick="createSuperAdmin()">Create Super Admin</button>
+                    <button class="btn btn-primary" onclick="loginSuperAdmin()">Login Super Admin</button>
+                    <button class="btn btn-success" onclick="loginResident()">Login Resident</button>
+                </div>
+                <div class="token-display" id="token-info">
+                    No token - Please login to get started
+                </div>
+            </div>
+            
+            <div class="nav-tabs">
+                <button class="nav-tab active" onclick="showTab('phase1')" id="tab-phase1">Phase 1: Setup & Auth</button>
+                <button class="nav-tab" onclick="showTab('phase2')" id="tab-phase2">Phase 2: Identity & Account</button>
+                <button class="nav-tab" onclick="showTab('phase3')" id="tab-phase3">Phase 3: Public Portal</button>
+                <button class="nav-tab" onclick="showTab('phase4')" id="tab-phase4">Phase 4: System Config</button>
+                <button class="nav-tab" onclick="showTab('phase5')" id="tab-phase5">Phase 5: Document Requests</button>
+                <button class="nav-tab" onclick="showTab('phase6')" id="tab-phase6">Phase 6: Financial Encoding</button>
+                <button class="nav-tab" onclick="showTab('phase7')" id="tab-phase7">Phase 7: Document Generation</button>
+                <button class="nav-tab" onclick="showTab('phase8')" id="tab-phase8">Phase 8: Administration</button>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <!-- Phase 1: Setup & Auth -->
+            <div id="phase1" class="tab-content">
+                <h3>🔧 Phase 1: Database Setup & Authentication</h3>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Setup Database</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/setup/database</small>
+                    </div>
+                    <p>Initialize the database schema and create all required tables.</p>
+                    <button class="btn btn-primary" onclick="setupDatabase()">Execute</button>
+                    <div class="response-section" id="response-setup"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Database Health Check</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/health/db</small>
+                    </div>
+                    <p>Check database connectivity and list all created tables.</p>
+                    <button class="btn btn-info" onclick="checkDBHealth()">Execute</button>
+                    <div class="response-section" id="response-db-health"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Test Cryptography</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/test/crypto</small>
+                    </div>
+                    <p>Test password hashing and data encryption/decryption functions.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="text" id="crypto-password" value="test123">
+                        </div>
+                        <div class="form-group">
+                            <label>Sensitive Data</label>
+                            <input type="text" id="crypto-data" value="secret information">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="testCrypto()">Execute</button>
+                    <div class="response-section" id="response-crypto"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Generate Test Token</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/test/generate-token</small>
+                    </div>
+                    <p>Generate a JWT token for testing purposes.</p>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>ID</label>
+                            <input type="number" id="token-id" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Role</label>
+                            <select id="token-role">
+                                <option>Super Admin</option>
+                                <option>Secretary</option>
+                                <option>Treasurer</option>
+                                <option>Captain</option>
+                                <option>Resident</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="token-username" value="testuser">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="generateTestToken()">Execute</button>
+                    <div class="response-section" id="response-token"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Super Admin Test</strong>
+                            <span class="role-badge">Super Admin</span>
+                        </div>
+                        <small>/api/v1/test/super-admin-only</small>
+                    </div>
+                    <p>Test endpoint that requires Super Admin role.</p>
+                    <button class="btn btn-danger" onclick="testSuperAdmin()">Execute</button>
+                    <div class="response-section" id="response-superadmin"></div>
+                </div>
+            </div>
+            
+            <!-- Phase 2: Identity & Account Management -->
+            <div id="phase2" class="tab-content hidden">
+                <h3>👤 Phase 2: Identity & Account Management</h3>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Resident Registration</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/auth/resident/register</small>
+                    </div>
+                    <p>Register a new resident account.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>First Name <span class="required">*</span></label>
+                            <input type="text" id="reg-first-name" value="Juan">
+                        </div>
+                        <div class="form-group">
+                            <label>Middle Name</label>
+                            <input type="text" id="reg-middle-name" value="Dela">
+                        </div>
+                        <div class="form-group">
+                            <label>Last Name <span class="required">*</span></label>
+                            <input type="text" id="reg-last-name" value="Cruz">
+                        </div>
+                        <div class="form-group">
+                            <label>Date of Birth <span class="required">*</span></label>
+                            <input type="date" id="reg-dob" value="1990-01-01">
+                        </div>
+                        <div class="form-group">
+                            <label>Civil Status <span class="required">*</span></label>
+                            <select id="reg-civil-status">
+                                <option>Single</option>
+                                <option>Married</option>
+                                <option>Widowed</option>
+                                <option>Divorced</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Address <span class="required">*</span></label>
+                            <input type="text" id="reg-address" value="123 Main St, Barangay 143">
+                        </div>
+                        <div class="form-group">
+                            <label>Email <span class="required">*</span></label>
+                            <input type="email" id="reg-email" value="juan.cruz@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label>Contact Number <span class="required">*</span></label>
+                            <input type="text" id="reg-contact" value="09123456789">
+                        </div>
+                        <div class="form-group">
+                            <label>Password <span class="required">*</span></label>
+                            <input type="password" id="reg-password" value="password123">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="registerResident()">Register</button>
+                    <div class="response-section" id="response-register"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>User Login</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/auth/login</small>
+                    </div>
+                    <p>Login as resident or official.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Email/Username <span class="required">*</span></label>
+                            <input type="text" id="login-credentials" value="superadmin">
+                        </div>
+                        <div class="form-group">
+                            <label>Password <span class="required">*</span></label>
+                            <input type="password" id="login-password" value="SuperAdmin123">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="loginUser()">Login</button>
+                    <div class="response-section" id="response-login"></div>
+                </div>
+            </div>
+            
+            <!-- Phase 3: Public Portal -->
+            <div id="phase3" class="tab-content hidden">
+                <h3>🌐 Phase 3: Public Portal</h3>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Public Announcements</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/public/announcements</small>
+                    </div>
+                    <p>Get all published announcements.</p>
+                    <button class="btn btn-info" onclick="getAnnouncements()">Get Announcements</button>
+                    <div class="response-section" id="response-announcements"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Document Types</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/public/document-types</small>
+                    </div>
+                    <p>Get all available document types.</p>
+                    <button class="btn btn-info" onclick="getDocumentTypes()">Get Document Types</button>
+                    <div class="response-section" id="response-doc-types"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>System Settings</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/public/settings</small>
+                    </div>
+                    <p>Get public system settings.</p>
+                    <button class="btn btn-info" onclick="getPublicSettings()">Get Settings</button>
+                    <div class="response-section" id="response-settings"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Seed Public Data</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/setup/seed-public</small>
+                    </div>
+                    <p>Seed dummy data for public portal testing.</p>
+                    <button class="btn btn-warning" onclick="seedPublicData()">Seed Data</button>
+                    <div class="response-section" id="response-seed"></div>
+                </div>
+            </div>
+            
+            <!-- Phase 4: System Configuration -->
+            <div id="phase4" class="tab-content hidden">
+                <h3>⚙️ Phase 4: System Configuration & Content</h3>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Update System Setting</strong>
+                            <span class="role-badge">Super Admin</span>
+                        </div>
+                        <small>/api/v1/admin/settings/:setting_key</small>
+                    </div>
+                    <p>Update a system setting value.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Setting Key</label>
+                            <input type="text" id="setting-key" value="contact_email">
+                        </div>
+                        <div class="form-group">
+                            <label>Setting Value</label>
+                            <input type="text" id="setting-value" value="newemail@brgy.gov.ph">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="updateSetting()">Update Setting</button>
+                    <div class="response-section" id="response-setting"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Create Document Type</strong>
+                            <span class="role-badge">Super Admin, Secretary</span>
+                        </div>
+                        <small>/api/v1/admin/document-types</small>
+                    </div>
+                    <p>Create a new document type.</p>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Type Name <span class="required">*</span></label>
+                            <input type="text" id="doc-type-name" value="Business Permit">
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <input type="text" id="doc-description" value="Required for business operations">
+                        </div>
+                        <div class="form-group">
+                            <label>Base Fee</label>
+                            <input type="number" id="doc-fee" value="100.00">
+                        </div>
+                        <div class="form-group">
+                            <label>Requirements</label>
+                            <input type="text" id="doc-requirements" value="Valid ID, Business Registration">
+                        </div>
+                        <div class="form-group">
+                            <label>Validity Days</label>
+                            <input type="number" id="doc-validity" value="365">
+                        </div>
+                        <div class="form-group">
+                            <label>Available</label>
+                            <select id="doc-available">
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="createDocumentType()">Create</button>
+                    <div class="response-section" id="response-doc-type"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Update Document Type</strong>
+                            <span class="role-badge">Super Admin, Secretary</span>
+                        </div>
+                        <small>/api/v1/admin/document-types/:id</small>
+                    </div>
+                    <p>Update an existing document type.</p>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Document Type ID</label>
+                            <input type="number" id="update-doc-id" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>New Name</label>
+                            <input type="text" id="update-doc-name" value="Updated Clearance">
+                        </div>
+                        <div class="form-group">
+                            <label>New Fee</label>
+                            <input type="number" id="update-doc-fee" value="75.00">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="updateDocumentType()">Update</button>
+                    <div class="response-section" id="response-update-doc"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Update Document Layout</strong>
+                            <span class="role-badge">Super Admin, Secretary</span>
+                        </div>
+                        <small>/api/v1/admin/document-types/:id/layout</small>
+                    </div>
+                    <p>Update document layout configuration.</p>
+                    <div class="form-group">
+                        <label>Document Type ID</label>
+                        <input type="number" id="layout-doc-id" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Layout Config (JSON)</label>
+                        <textarea id="layout-config">{"name":{"x":100,"y":200},"date":{"x":400,"y":100}}</textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="updateLayout()">Update Layout</button>
+                    <div class="response-section" id="response-layout"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Create Announcement</strong>
+                            <span class="role-badge">Super Admin, Captain, Secretary</span>
+                        </div>
+                        <small>/api/v1/admin/announcements</small>
+                    </div>
+                    <p>Create a new announcement.</p>
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="ann-title" value="Community Meeting">
+                    </div>
+                    <div class="form-group">
+                        <label>Content</label>
+                        <textarea id="ann-content">Please attend the monthly community meeting this Friday.</textarea>
+                    </div>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Target Audience</label>
+                            <select id="ann-audience">
+                                <option>All</option>
+                                <option>Residents</option>
+                                <option>Officials</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Pinned</label>
+                            <select id="ann-pinned">
+                                <option value="false">No</option>
+                                <option value="true">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <select id="ann-status">
+                                <option>Draft</option>
+                                <option>Published</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="createAnnouncement()">Create</button>
+                    <div class="response-section" id="response-announcement"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Update Resident Status</strong>
+                            <span class="role-badge">Super Admin, Secretary</span>
+                        </div>
+                        <small>/api/v1/admin/residents/:id/status</small>
+                    </div>
+                    <p>Update resident account status.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Resident ID</label>
+                            <input type="number" id="resident-id" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <select id="resident-status">
+                                <option>Pending</option>
+                                <option>Active</option>
+                                <option>Blocked</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="updateResidentStatus()">Update</button>
+                    <div class="response-section" id="response-resident-status"></div>
+                </div>
+            </div>
+            
+            <!-- Phase 5: Document Requests -->
+            <div id="phase5" class="tab-content hidden">
+                <h3>📄 Phase 5: Document Request Engine</h3>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Submit Document Request</strong>
+                            <span class="role-badge">Resident</span>
+                        </div>
+                        <small>/api/v1/requests</small>
+                    </div>
+                    <p>Submit a new document request.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Document Type ID <span class="required">*</span></label>
+                            <input type="number" id="req-doc-type" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Purpose <span class="required">*</span></label>
+                            <input type="text" id="req-purpose" value="Employment">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="submitRequest()">Submit Request</button>
+                    <div class="response-section" id="response-request"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>My Requests</strong>
+                            <span class="role-badge">Resident</span>
+                        </div>
+                        <small>/api/v1/requests/resident/me</small>
+                    </div>
+                    <p>Get all requests for the authenticated resident.</p>
+                    <button class="btn btn-info" onclick="getMyRequests()">Get My Requests</button>
+                    <div class="response-section" id="response-my-requests"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Pending Requests</strong>
+                            <span class="role-badge">Secretary, Super Admin</span>
+                        </div>
+                        <small>/api/v1/requests/pending</small>
+                    </div>
+                    <p>Get all pending requests for verification.</p>
+                    <button class="btn btn-info" onclick="getPendingRequests()">Get Pending</button>
+                    <div class="response-section" id="response-pending"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Verify Request</strong>
+                            <span class="role-badge">Secretary, Super Admin</span>
+                        </div>
+                        <small>/api/v1/requests/:request_id/verify</small>
+                    </div>
+                    <p>Approve or reject a pending request.</p>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Request ID</label>
+                            <input type="number" id="verify-request-id" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Action</label>
+                            <select id="verify-action">
+                                <option>Approve</option>
+                                <option>Reject</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Rejection Reason (if rejected)</label>
+                            <input type="text" id="verify-reason" placeholder="Required if rejecting">
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="verifyRequest()">Verify</button>
+                    <div class="response-section" id="response-verify"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Update ID Proof</strong>
+                            <span class="role-badge">Resident</span>
+                        </div>
+                        <small>/api/v1/residents/me/id-proof</small>
+                    </div>
+                    <p>Update resident's ID proof filename.</p>
+                    <div class="form-group">
+                        <label>ID Proof Filename</label>
+                        <input type="text" id="id-proof-filename" value="id_proof_123.jpg">
+                    </div>
+                    <button class="btn btn-primary" onclick="updateIdProof()">Update</button>
+                    <div class="response-section" id="response-id-proof"></div>
+                </div>
+            </div>
+            
+            <!-- Phase 6: Financial Encoding -->
+            <div id="phase6" class="tab-content hidden">
+                <h3>💰 Phase 6: Financial Encoding & Final Validation</h3>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Payment Queue</strong>
+                            <span class="role-badge">Treasurer, Super Admin</span>
+                        </div>
+                        <small>/api/v1/payments/queue</small>
+                    </div>
+                    <p>Get requests waiting for payment processing.</p>
+                    <button class="btn btn-info" onclick="getPaymentQueue()">Get Queue</button>
+                    <div class="response-section" id="response-payment-queue"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Process Payment</strong>
+                            <span class="role-badge">Treasurer, Super Admin</span>
+                        </div>
+                        <small>/api/v1/payments</small>
+                    </div>
+                    <p>Process payment for a request.</p>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Request ID</label>
+                            <input type="number" id="payment-request-id" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Amount Paid</label>
+                            <input type="number" id="payment-amount" value="50.00">
+                        </div>
+                        <div class="form-group">
+                            <label>OR Number</label>
+                            <input type="text" id="payment-or" value="OR-123456">
+                        </div>
+                        <div class="form-group">
+                            <label>Payor Name</label>
+                            <input type="text" id="payment-payor" value="Juan Cruz">
+                        </div>
+                        <div class="form-group">
+                            <label>Payment Status</label>
+                            <select id="payment-status">
+                                <option>Unpaid</option>
+                                <option>Paid</option>
+                                <option>Refunded</option>
+                                <option>Exempted</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="processPayment()">Process</button>
+                    <div class="response-section" id="response-payment"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Mark as Exempted</strong>
+                            <span class="role-badge">Treasurer, Super Admin</span>
+                        </div>
+                        <small>/api/v1/payments/exempt/:request_id</small>
+                    </div>
+                    <p>Mark a request as exempted from payment.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Request ID</label>
+                            <input type="number" id="exempt-request-id" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Payor Name</label>
+                            <input type="text" id="exempt-payor" value="Juan Cruz">
+                        </div>
+                    </div>
+                    <button class="btn btn-warning" onclick="markExempted()">Mark Exempted</button>
+                    <div class="response-section" id="response-exempt"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Mark Ready for Pickup</strong>
+                            <span class="role-badge">Secretary, Super Admin</span>
+                        </div>
+                        <small>/api/v1/requests/:request_id/ready</small>
+                    </div>
+                    <p>Mark a processed request as ready for pickup.</p>
+                    <div class="form-group">
+                        <label>Request ID</label>
+                        <input type="number" id="ready-request-id" value="1">
+                    </div>
+                    <button class="btn btn-primary" onclick="markReady()">Mark Ready</button>
+                    <div class="response-section" id="response-ready"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Issue Document</strong>
+                            <span class="role-badge">Secretary, Super Admin</span>
+                        </div>
+                        <small>/api/v1/requests/:request_id/issue</small>
+                    </div>
+                    <p>Issue the document to the resident.</p>
+                    <div class="form-group">
+                        <label>Request ID</label>
+                        <input type="number" id="issue-request-id" value="1">
+                    </div>
+                    <button class="btn btn-success" onclick="issueDocument()">Issue</button>
+                    <div class="response-section" id="response-issue"></div>
+                </div>
+            </div>
+            
+            <!-- Phase 7: Document Generation -->
+            <div id="phase7" class="tab-content hidden">
+                <h3>🖨️ Phase 7: Document Generation & Cryptography</h3>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Upload Signature</strong>
+                            <span class="role-badge">Super Admin, Captain</span>
+                        </div>
+                        <small>/api/v1/admin/signatures/upload</small>
+                    </div>
+                    <p>Upload digital signature for document signing.</p>
+                    <div class="file-input">
+                        <input type="file" id="signature-file" accept="image/png">
+                        <small>Upload PNG signature file</small>
+                    </div>
+                    <button class="btn btn-primary" onclick="uploadSignature()">Upload</button>
+                    <div class="response-section" id="response-signature"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Upload Document Template</strong>
+                            <span class="role-badge">Super Admin, Secretary</span>
+                        </div>
+                        <small>/api/v1/admin/document-types/:id/template</small>
+                    </div>
+                    <p>Upload document template (background).</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Document Type ID</label>
+                            <input type="number" id="template-doc-id" value="1">
+                        </div>
+                        <div class="file-input">
+                            <input type="file" id="template-file" accept="image/*,.pdf">
+                            <small>Upload template file (PNG, JPG, PDF)</small>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="uploadTemplate()">Upload Template</button>
+                    <div class="response-section" id="response-template"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Generate PDF</strong>
+                            <span class="role-badge">Secretary, Super Admin</span>
+                        </div>
+                        <small>/api/v1/requests/:request_id/generate-pdf</small>
+                    </div>
+                    <p>Generate PDF document with QR code.</p>
+                    <div class="form-group">
+                        <label>Request ID</label>
+                        <input type="number" id="pdf-request-id" value="1">
+                    </div>
+                    <button class="btn btn-primary" onclick="generatePDF()">Generate PDF</button>
+                    <div class="response-section" id="response-pdf"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Verify QR Code</strong>
+                            <span class="role-badge">Public</span>
+                        </div>
+                        <small>/api/v1/public/verify/:qr_hash</small>
+                    </div>
+                    <p>Verify document authenticity using QR hash.</p>
+                    <div class="form-group">
+                        <label>QR Hash</label>
+                        <input type="text" id="qr-hash" placeholder="Enter QR hash from document">
+                    </div>
+                    <button class="btn btn-info" onclick="verifyQR()">Verify</button>
+                    <div class="response-section" id="response-qr"></div>
+                </div>
+            </div>
+            
+            <!-- Phase 8: Administration -->
+            <div id="phase8" class="tab-content hidden">
+                <h3>🛡️ Phase 8: System Administration & Auditing</h3>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-POST">POST</span>
+                            <strong>Create Official Account</strong>
+                            <span class="role-badge">Super Admin</span>
+                        </div>
+                        <small>/api/v1/admin/officials</small>
+                    </div>
+                    <p>Create new official account (Secretary, Treasurer, Captain).</p>
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Official ID</label>
+                            <input type="text" id="official-id" value="SEC-001">
+                        </div>
+                        <div class="form-group">
+                            <label>Full Name</label>
+                            <input type="text" id="official-name" value="Maria Santos">
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="email" id="official-email" value="maria@brgy.gov.ph">
+                        </div>
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" id="official-username" value="marias">
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="official-password" value="password123">
+                        </div>
+                        <div class="form-group">
+                            <label>Role</label>
+                            <select id="official-role">
+                                <option>Secretary</option>
+                                <option>Treasurer</option>
+                                <option>Captain</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="createOfficial()">Create Official</button>
+                    <div class="response-section" id="response-official"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-PUT">PUT</span>
+                            <strong>Update Official Status</strong>
+                            <span class="role-badge">Super Admin</span>
+                        </div>
+                        <small>/api/v1/admin/officials/:id/status</small>
+                    </div>
+                    <p>Update official account status.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Official ID</label>
+                            <input type="number" id="update-official-id" value="2">
+                        </div>
+                        <div class="form-group">
+                            <label>Status</label>
+                            <select id="update-official-status">
+                                <option>Active</option>
+                                <option>Inactive</option>
+                                <option>Suspended</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="updateOfficialStatus()">Update Status</button>
+                    <div class="response-section" id="response-official-status"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>View Audit Logs</strong>
+                            <span class="role-badge">Super Admin</span>
+                        </div>
+                        <small>/api/v1/admin/audit-logs</small>
+                    </div>
+                    <p>View system audit logs for forensic analysis.</p>
+                    <div class="grid-2">
+                        <div class="form-group">
+                            <label>Limit</label>
+                            <input type="number" id="audit-limit" value="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Offset</label>
+                            <input type="number" id="audit-offset" value="0">
+                        </div>
+                    </div>
+                    <button class="btn btn-info" onclick="viewAuditLogs()">View Logs</button>
+                    <div class="response-section" id="response-audit"></div>
+                </div>
+                
+                <div class="endpoint-card">
+                    <div class="endpoint-header">
+                        <div>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>View System Settings</strong>
+                            <span class="role-badge">Super Admin</span>
+                        </div>
+                        <small>/api/v1/admin/settings</small>
+                    </div>
+                    <p>View all system settings.</p>
+                    <button class="btn btn-info" onclick="viewSettings()">View Settings</button>
+                    <div class="response-section" id="response-all-settings"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:5000/api/v1';
+        
+        function getToken() {
+            return document.getElementById('token').value.trim();
+        }
+        
+        function updateTokenInfo() {
+            const token = getToken();
+            const info = document.getElementById('token-info');
+            if (token) {
+                info.innerHTML = `<strong>Current Token:</strong><br>${token}`;
+            } else {
+                info.innerHTML = 'No token - Please login to get started';
+            }
+        }
+        
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.add('hidden');
+            });
+            
+            // Remove active class from all nav tabs
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.remove('hidden');
+            document.getElementById('tab-' + tabName).classList.add('active');
+        }
+        
+        function formatResponse(response, status = 200) {
+            return `Status: ${status}\n${JSON.stringify(response, null, 2)}`;
+        }
+        
+        async function apiRequest(method, endpoint, body = null, isFile = false, formData = null) {
+            const token = getToken();
+            const headers = {};
+            
+            if (!isFile) {
+                headers['Content-Type'] = 'application/json';
+            }
+            
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            
+            const options = { method, headers };
+            
+            if (body && !isFile) {
+                options.body = JSON.stringify(body);
+            } else if (formData) {
+                options.body = formData;
+                // Don't set Content-Type for FormData, let browser set it with boundary
+                delete headers['Content-Type'];
+            }
+            
+            try {
+                const response = await fetch(BASE_URL + endpoint, options);
+                const result = await response.json();
+                return { result, status: response.status };
+            } catch (error) {
+                return { result: { error: error.message }, status: 0 };
+            }
+        }
+        
+        function displayResponse(elementId, response, status) {
+            const element = document.getElementById(elementId);
+            const statusClass = status >= 200 && status < 300 ? 'status-2xx' : 
+                               status >= 400 && status < 500 ? 'status-4xx' : 'status-5xx';
+            
+            element.innerHTML = `
+                <div class="response-header">
+                    <span class="status-code ${statusClass}">HTTP ${status}</span>
+                    <span>Response Time: ${new Date().toLocaleTimeString()}</span>
+                </div>
+                <div>${JSON.stringify(response, null, 2)}</div>
+            `;
+        }
+        
+        // Phase 1 Functions
+        async function setupDatabase() {
+            const { result, status } = await apiRequest('POST', '/setup/database');
+            displayResponse('response-setup', result, status);
+        }
+        
+        async function checkDBHealth() {
+            const { result, status } = await apiRequest('GET', '/health/db');
+            displayResponse('response-db-health', result, status);
+        }
+        
+        async function testCrypto() {
+            const body = {
+                password: document.getElementById('crypto-password').value,
+                sensitive_data: document.getElementById('crypto-data').value
+            };
+            const { result, status } = await apiRequest('POST', '/test/crypto', body);
+            displayResponse('response-crypto', result, status);
+        }
+        
+        async function generateTestToken() {
+            const body = {
+                id: parseInt(document.getElementById('token-id').value),
+                role: document.getElementById('token-role').value,
+                username: document.getElementById('token-username').value
+            };
+            const { result, status } = await apiRequest('POST', '/test/generate-token', body);
+            displayResponse('response-token', result, status);
+            if (result.token) {
+                document.getElementById('token').value = result.token;
+                updateTokenInfo();
+            }
+        }
+        
+        async function testSuperAdmin() {
+            const { result, status } = await apiRequest('GET', '/test/super-admin-only');
+            displayResponse('response-superadmin', result, status);
+        }
+        
+        // Phase 2 Functions
+        async function registerResident() {
+            const body = {
+                first_name: document.getElementById('reg-first-name').value,
+                middle_name: document.getElementById('reg-middle-name').value,
+                last_name: document.getElementById('reg-last-name').value,
+                date_of_birth: document.getElementById('reg-dob').value,
+                civil_status: document.getElementById('reg-civil-status').value,
+                address_street: document.getElementById('reg-address').value,
+                email_address: document.getElementById('reg-email').value,
+                contact_number: document.getElementById('reg-contact').value,
+                password: document.getElementById('reg-password').value
+            };
+            const { result, status } = await apiRequest('POST', '/auth/resident/register', body);
+            displayResponse('response-register', result, status);
+        }
+        
+        async function loginUser() {
+            const body = {
+                email_or_username: document.getElementById('login-credentials').value,
+                password: document.getElementById('login-password').value
+            };
+            const { result, status } = await apiRequest('POST', '/auth/login', body);
+            displayResponse('response-login', result, status);
+            if (result.token) {
+                document.getElementById('token').value = result.token;
+                updateTokenInfo();
+            }
+        }
+        
+        async function createSuperAdmin() {
+            const { result, status } = await apiRequest('POST', '/setup/superadmin');
+            displayResponse('response-setup', result, status);
+        }
+        
+        async function loginSuperAdmin() {
+            const body = {
+                email_or_username: 'superadmin',
+                password: 'SuperAdmin123'
+            };
+            const { result, status } = await apiRequest('POST', '/auth/login', body);
+            displayResponse('response-login', result, status);
+            if (result.token) {
+                document.getElementById('token').value = result.token;
+                updateTokenInfo();
+            }
+        }
+        
+        async function loginResident() {
+            const body = {
+                email_or_username: document.getElementById('login-credentials').value || 'juan.cruz@example.com',
+                password: document.getElementById('login-password').value || 'password123'
+            };
+            const { result, status } = await apiRequest('POST', '/auth/login', body);
+            displayResponse('response-login', result, status);
+            if (result.token) {
+                document.getElementById('token').value = result.token;
+                updateTokenInfo();
+            }
+        }
+        
+        // Phase 3 Functions
+        async function getAnnouncements() {
+            const { result, status } = await apiRequest('GET', '/public/announcements');
+            displayResponse('response-announcements', result, status);
+        }
+        
+        async function getDocumentTypes() {
+            const { result, status } = await apiRequest('GET', '/public/document-types');
+            displayResponse('response-doc-types', result, status);
+        }
+        
+        async function getPublicSettings() {
+            const { result, status } = await apiRequest('GET', '/public/settings');
+            displayResponse('response-settings', result, status);
+        }
+        
+        async function seedPublicData() {
+            const { result, status } = await apiRequest('POST', '/setup/seed-public');
+            displayResponse('response-seed', result, status);
+        }
+        
+        // Phase 4 Functions
+        async function updateSetting() {
+            const key = document.getElementById('setting-key').value;
+            const value = document.getElementById('setting-value').value;
+            const { result, status } = await apiRequest('PUT', `/admin/settings/${key}`, { setting_value: value });
+            displayResponse('response-setting', result, status);
+        }
+        
+        async function createDocumentType() {
+            const body = {
+                type_name: document.getElementById('doc-type-name').value,
+                description: document.getElementById('doc-description').value,
+                base_fee: parseFloat(document.getElementById('doc-fee').value),
+                requirements: document.getElementById('doc-requirements').value,
+                validity_days: parseInt(document.getElementById('doc-validity').value),
+                is_available: document.getElementById('doc-available').value === 'true'
+            };
+            const { result, status } = await apiRequest('POST', '/admin/document-types', body);
+            displayResponse('response-doc-type', result, status);
+        }
+        
+        async function updateDocumentType() {
+            const id = document.getElementById('update-doc-id').value;
+            const body = {
+                type_name: document.getElementById('update-doc-name').value,
+                base_fee: parseFloat(document.getElementById('update-doc-fee').value)
+            };
+            const { result, status } = await apiRequest('PUT', `/admin/document-types/${id}`, body);
+            displayResponse('response-update-doc', result, status);
+        }
+        
+        async function updateLayout() {
+            const id = document.getElementById('layout-doc-id').value;
+            let config;
+            try {
+                config = JSON.parse(document.getElementById('layout-config').value);
+            } catch (e) {
+                alert('Invalid JSON in layout config');
+                return;
+            }
+            const { result, status } = await apiRequest('PUT', `/admin/document-types/${id}/layout`, { layout_config: config });
+            displayResponse('response-layout', result, status);
+        }
+        
+        async function createAnnouncement() {
+            const body = {
+                title: document.getElementById('ann-title').value,
+                content_body: document.getElementById('ann-content').value,
+                target_audience: document.getElementById('ann-audience').value,
+                is_pinned: document.getElementById('ann-pinned').value === 'true',
+                status: document.getElementById('ann-status').value
+            };
+            const { result, status } = await apiRequest('POST', '/admin/announcements', body);
+            displayResponse('response-announcement', result, status);
+        }
+        
+        async function updateResidentStatus() {
+            const id = document.getElementById('resident-id').value;
+            const status = document.getElementById('resident-status').value;
+            const { result, status: respStatus } = await apiRequest('PUT', `/admin/residents/${id}/status`, { account_status: status });
+            displayResponse('response-resident-status', result, respStatus);
+        }
+        
+        // Phase 5 Functions
+        async function submitRequest() {
+            const body = {
+                doc_type_id: parseInt(document.getElementById('req-doc-type').value),
+                purpose: document.getElementById('req-purpose').value
+            };
+            const { result, status } = await apiRequest('POST', '/requests', body);
+            displayResponse('response-request', result, status);
+        }
+        
+        async function getMyRequests() {
+            const { result, status } = await apiRequest('GET', '/requests/resident/me');
+            displayResponse('response-my-requests', result, status);
+        }
+        
+        async function getPendingRequests() {
+            const { result, status } = await apiRequest('GET', '/requests/pending');
+            displayResponse('response-pending', result, status);
+        }
+        
+        async function verifyRequest() {
+            const id = document.getElementById('verify-request-id').value;
+            const action = document.getElementById('verify-action').value;
+            const reason = document.getElementById('verify-reason').value;
+            
+            const body = { action };
+            if (action === 'Reject' && reason) {
+                body.rejection_reason = reason;
+            }
+            
+            const { result, status } = await apiRequest('PUT', `/requests/${id}/verify`, body);
+            displayResponse('response-verify', result, status);
+        }
+        
+        async function updateIdProof() {
+            const filename = document.getElementById('id-proof-filename').value;
+            const { result, status } = await apiRequest('PUT', '/residents/me/id-proof', { id_proof_filename: filename });
+            displayResponse('response-id-proof', result, status);
+        }
+        
+        // Phase 6 Functions
+        async function getPaymentQueue() {
+            const { result, status } = await apiRequest('GET', '/payments/queue');
+            displayResponse('response-payment-queue', result, status);
+        }
+        
+        async function processPayment() {
+            const body = {
+                request_id: parseInt(document.getElementById('payment-request-id').value),
+                amount_paid: parseFloat(document.getElementById('payment-amount').value),
+                or_number: document.getElementById('payment-or').value,
+                payor_name: document.getElementById('payment-payor').value,
+                payment_status: document.getElementById('payment-status').value
+            };
+            const { result, status } = await apiRequest('POST', '/payments', body);
+            displayResponse('response-payment', result, status);
+        }
+        
+        async function markExempted() {
+            const id = document.getElementById('exempt-request-id').value;
+            const payor = document.getElementById('exempt-payor').value;
+            const { result, status } = await apiRequest('POST', `/payments/exempt/${id}`, { payor_name: payor });
+            displayResponse('response-exempt', result, status);
+        }
+        
+        async function markReady() {
+            const id = document.getElementById('ready-request-id').value;
+            const { result, status } = await apiRequest('PUT', `/requests/${id}/ready`);
+            displayResponse('response-ready', result, status);
+        }
+        
+        async function issueDocument() {
+            const id = document.getElementById('issue-request-id').value;
+            const { result, status } = await apiRequest('PUT', `/requests/${id}/issue`);
+            displayResponse('response-issue', result, status);
+        }
+        
+        // Phase 7 Functions
+        async function uploadSignature() {
+            const fileInput = document.getElementById('signature-file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a PNG file');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const { result, status } = await apiRequest('POST', '/admin/signatures/upload', null, true, formData);
+            displayResponse('response-signature', result, status);
+        }
+        
+        async function uploadTemplate() {
+            const docId = document.getElementById('template-doc-id').value;
+            const fileInput = document.getElementById('template-file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a file');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const { result, status } = await apiRequest('POST', `/admin/document-types/${docId}/template`, null, true, formData);
+            displayResponse('response-template', result, status);
+        }
+        
+        async function generatePDF() {
+            const id = document.getElementById('pdf-request-id').value;
+            const token = getToken();
+            
+            if (!token) {
+                alert('Please login first to get a token');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${BASE_URL}/requests/${id}/generate-pdf`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `document_${id}.pdf`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    
+                    displayResponse('response-pdf', { message: 'PDF downloaded successfully!' }, 200);
+                } else {
+                    const result = await response.json();
+                    displayResponse('response-pdf', result, response.status);
+                }
+            } catch (error) {
+                displayResponse('response-pdf', { error: error.message }, 0);
+            }
+        }
+        
+        async function verifyQR() {
+            const hash = document.getElementById('qr-hash').value;
+            const { result, status } = await apiRequest('GET', `/public/verify/${hash}`);
+            displayResponse('response-qr', result, status);
+        }
+        
+        // Phase 8 Functions
+        async function createOfficial() {
+            const body = {
+                official_id: document.getElementById('official-id').value,
+                full_name: document.getElementById('official-name').value,
+                email_official: document.getElementById('official-email').value,
+                username: document.getElementById('official-username').value,
+                password: document.getElementById('official-password').value,
+                role: document.getElementById('official-role').value
+            };
+            const { result, status } = await apiRequest('POST', '/admin/officials', body);
+            displayResponse('response-official', result, status);
+        }
+        
+        async function updateOfficialStatus() {
+            const id = document.getElementById('update-official-id').value;
+            const status = document.getElementById('update-official-status').value;
+            const { result, respStatus } = await apiRequest('PUT', `/admin/officials/${id}/status`, { account_status: status });
+            displayResponse('response-official-status', result, respStatus);
+        }
+        
+        async function viewAuditLogs() {
+            const limit = document.getElementById('audit-limit').value;
+            const offset = document.getElementById('audit-offset').value;
+            const { result, status } = await apiRequest('GET', `/admin/audit-logs?limit=${limit}&offset=${offset}`);
+            displayResponse('response-audit', result, status);
+        }
+        
+        async function viewSettings() {
+            const { result, status } = await apiRequest('GET', '/admin/settings');
+            displayResponse('response-all-settings', result, status);
+        }
+        
+        // Initialize
+        updateTokenInfo();
+    </script>
+</body>
+</html>
