@@ -1,13 +1,14 @@
 import { 
     Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography, 
-    Grid, // <--- Correct Import
+    Grid,
     Chip, Divider, Box, TextField, CircularProgress, Alert 
 } from '@mui/material';
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { adminAPI, fileAPI } from '../services/api';
 
 const RequestModal = ({ open, handleClose, request, refreshData }) => {
-    const userRole = localStorage.getItem('role') || 'Admin'; 
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const userRole = user.role || 'Admin'; 
 
     // STATES
     const [rejectReason, setRejectReason] = useState('');
@@ -36,8 +37,8 @@ const RequestModal = ({ open, handleClose, request, refreshData }) => {
 
     // FETCH IMAGE
     useEffect(() => {
-        if (open && request && request.attachment_found) {
-            fetchSecureImage(request.attachment_found);
+        if (open && request && request.id_proof_image) {
+            fetchSecureImage(request.id_proof_image);
         } else {
             setImageSrc(null);
         }
@@ -45,26 +46,20 @@ const RequestModal = ({ open, handleClose, request, refreshData }) => {
 
     const fetchSecureImage = async (filename) => {
         setLoadingImage(true);
-        setImageSrc(null); // Reset
+        setImageSrc(null);
         try {
-            const token = localStorage.getItem('token');
-            
-            // NOTE: We removed 'responseType: blob' because we now expect JSON
-            const response = await axios.get(
-                `${import.meta.env.VITE_API_BASE_URL}/v1/files/${filename}`,
-                { headers: { Authorization: `Bearer ${token}` } }
+            const response = await fileAPI.getFile(filename);
+            // Convert arraybuffer to base64
+            const base64 = btoa(
+                new Uint8Array(response.data).reduce(
+                    (data, byte) => data + String.fromCharCode(byte),
+                    ''
+                )
             );
-
-            if (response.data.success) {
-                // Directly set the Base64 string as the source
-                console.log("Image loaded successfully!");
-                setImageSrc(response.data.image);
-            } else {
-                console.error("Server returned success: false");
-            }
+            const mimeType = filename.includes('.png') ? 'image/png' : 'image/jpeg';
+            setImageSrc(`data:${mimeType};base64,${base64}`);
         } catch (err) {
             console.error("Failed to load image:", err);
-            // Optional: Set a placeholder error image here
         } finally {
             setLoadingImage(false);
         }
@@ -72,31 +67,58 @@ const RequestModal = ({ open, handleClose, request, refreshData }) => {
 
     if (!request) return null;
 
-    const handleStatusUpdate = async (newStatus) => {
+    const handleVerify = async (action) => {
         try {
-            const token = localStorage.getItem('token');
-            const payload = { 
-                status: newStatus, 
-                reason: rejectReason,
-                or_number: newStatus === 'Approved' ? paymentDetails.or_number : null,
-                amount_paid: newStatus === 'Approved' ? paymentDetails.amount : null
-            };
-
-            await axios.put(
-                `${import.meta.env.VITE_API_BASE_URL}/v1/requests/${request.request_id}/verify`,
-                payload,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            alert(`Success: Request marked as ${newStatus}`);
-            refreshData(); 
-            handleClose(); 
+            await adminAPI.verifyRequest(request.request_id, action, rejectReason);
+            alert(`Success: Request ${action === 'Approve' ? 'approved' : 'rejected'}`);
+            refreshData();
+            handleClose();
         } catch (err) {
-            alert(err.response?.data?.message || "Failed to update status.");
+            alert(err.response?.data?.error || "Failed to update status.");
         }
     };
 
-    const isSecretary = userRole === 'Secretary' || userRole === 'Admin'; 
-    const isTreasurer = userRole === 'Treasurer' || userRole === 'Admin';
+    const handlePayment = async () => {
+        try {
+            await adminAPI.processPayment({
+                request_id: request.request_id,
+                amount_paid: parseFloat(paymentDetails.amount),
+                or_number: paymentDetails.or_number,
+                payor_name: `${request.first_name} ${request.last_name}`,
+                payment_status: 'Paid'
+            });
+            alert('Success: Payment processed');
+            refreshData();
+            handleClose();
+        } catch (err) {
+            alert(err.response?.data?.error || "Failed to process payment.");
+        }
+    };
+
+    const handleReadyForPickup = async () => {
+        try {
+            await adminAPI.markReadyForPickup(request.request_id);
+            alert('Success: Document marked as Ready for Pickup');
+            refreshData();
+            handleClose();
+        } catch (err) {
+            alert(err.response?.data?.error || "Failed to update status.");
+        }
+    };
+
+    const handleIssue = async () => {
+        try {
+            await adminAPI.issueDocument(request.request_id);
+            alert('Success: Document issued');
+            refreshData();
+            handleClose();
+        } catch (err) {
+            alert(err.response?.data?.error || "Failed to issue document.");
+        }
+    };
+
+    const isSecretary = userRole === 'Secretary' || userRole === 'Super Admin'; 
+    const isTreasurer = userRole === 'Treasurer' || userRole === 'Super Admin';
 
     return (
         <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
@@ -176,8 +198,8 @@ const RequestModal = ({ open, handleClose, request, refreshData }) => {
                 <Button onClick={handleClose}>Close</Button>
 
                 {isSecretary && request.request_status === 'Pending' && (
-                    <Button variant="contained" color="warning" onClick={() => handleStatusUpdate('ForPayment')}>
-                        Verify & Bill
+                    <Button variant="contained" color="warning" onClick={() => handleVerify('Approve')}>
+                        Approve
                     </Button>
                 )}
 
@@ -186,19 +208,23 @@ const RequestModal = ({ open, handleClose, request, refreshData }) => {
                 )}
 
                 {showRejectField && (
-                    <Button variant="contained" color="error" onClick={() => handleStatusUpdate('Rejected')}>Confirm Rejection</Button>
+                    <Button variant="contained" color="error" onClick={() => handleVerify('Reject')}>Confirm Rejection</Button>
                 )}
 
-                {isTreasurer && request.request_status === 'ForPayment' && !showPaymentFields && (
+                {isTreasurer && request.request_status === 'For Payment' && !showPaymentFields && (
                     <Button variant="contained" color="success" onClick={() => setShowPaymentFields(true)}>Process Payment</Button>
                 )}
                 
                 {isTreasurer && showPaymentFields && (
-                    <Button variant="contained" color="success" disabled={!paymentDetails.or_number} onClick={() => handleStatusUpdate('Approved')}>Confirm Payment</Button>
+                    <Button variant="contained" color="success" disabled={!paymentDetails.or_number} onClick={handlePayment}>Confirm Payment</Button>
                 )}
 
-                {isSecretary && request.request_status === 'Approved' && (
-                    <Button variant="contained" color="primary" onClick={() => handleStatusUpdate('Completed')}>Release Document</Button>
+                {isSecretary && request.request_status === 'Processing' && (
+                    <Button variant="contained" color="primary" onClick={handleReadyForPickup}>Mark Ready for Pickup</Button>
+                )}
+
+                {isSecretary && request.request_status === 'Ready for Pickup' && (
+                    <Button variant="contained" color="success" onClick={handleIssue}>Issue Document</Button>
                 )}
             </DialogActions>
         </Dialog>

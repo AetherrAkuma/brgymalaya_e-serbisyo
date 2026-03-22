@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import axios from 'axios';
 import { Container, Paper, TextField, Button, Typography, Alert, Box } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 
 const AdminLogin = () => {
     const navigate = useNavigate();
-    const [credentials, setCredentials] = useState({ username: '', password: '' });
+    const { login } = useAuth();
+    const [credentials, setCredentials] = useState({ email_or_username: '', password: '' });
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
 
     const handleChange = (e) => {
         setCredentials({ ...credentials, [e.target.name]: e.target.value });
@@ -15,26 +17,29 @@ const AdminLogin = () => {
     const handleLogin = async (e) => {
         e.preventDefault();
         setError('');
+        setLoading(true);
         
         try {
-            // Hit the distinct Admin API
-            const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/v1/auth/login`, credentials);
+            const result = await login(credentials);
             
-            if (res.data.success) {
-                // Store token (we can call it 'admin_token' to distinguish from residents)
-                localStorage.setItem('token', res.data.token); 
-                localStorage.setItem('user_role', res.data.user.role); // Save role for UI logic
-
-                alert(`Welcome back, ${res.data.user.role}!`);
-                navigate('/admin/dashboard');
+            if (result.success) {
+                const user = JSON.parse(localStorage.getItem('user'));
+                // Verify this is an official account
+                if (['Super Admin', 'Secretary', 'Treasurer', 'Captain'].includes(user.role)) {
+                    navigate('/admin/dashboard');
+                } else {
+                    setError('Access Denied. This portal is for Barangay Officials only.');
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                }
+            } else {
+                setError(result.error || 'Access Denied. Invalid Credentials.');
             }
         } catch (err) {
             console.error(err);
-            if (err.response && err.response.data && err.response.data.message) {
-                setError(err.response.data.message);
-            } else {
-            setError("Access Denied. Invalid Credentials.");
-            }
+            setError(err.response?.data?.error || "Access Denied. Invalid Credentials.");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -60,8 +65,8 @@ const AdminLogin = () => {
                     <form onSubmit={handleLogin}>
                         <TextField
                             fullWidth
-                            label="Username"
-                            name="username"
+                            label="Email or Username"
+                            name="email_or_username"
                             variant="outlined"
                             margin="normal"
                             onChange={handleChange}
@@ -82,9 +87,10 @@ const AdminLogin = () => {
                             fullWidth 
                             variant="contained" 
                             size="large"
+                            disabled={loading}
                             sx={{ mt: 3, backgroundColor: '#1a237e' }}
                         >
-                            Enter Portal
+                            {loading ? 'Authenticating...' : 'Enter Portal'}
                         </Button>
                     </form>
                 </Paper>

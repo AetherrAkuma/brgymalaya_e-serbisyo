@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Typography, Card, CardContent, TextField, Button, MenuItem, Box, Stepper, Step, StepLabel, Alert, Divider, useTheme, useMediaQuery } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { residentAPI, fileAPI } from '../services/api';
+import { residentAPI, fileAPI, publicAPI } from '../services/api';
 
 const steps = ['Select Document', 'Purpose & File', 'Review'];
 
@@ -29,7 +29,7 @@ const RequestDocument = () => {
   useEffect(() => {
     const fetchTypes = async () => {
       try {
-        const response = await residentAPI.getDocumentTypes();
+        const response = await publicAPI.getDocumentTypes();
         if (response.data.status === 'success') {
           setDocTypes(response.data.data);
         }

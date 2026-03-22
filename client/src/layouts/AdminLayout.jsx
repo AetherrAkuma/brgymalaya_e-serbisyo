@@ -7,17 +7,20 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import AssignmentIcon from '@mui/icons-material/Assignment'; 
 import PeopleIcon from '@mui/icons-material/People'; 
 import CampaignIcon from '@mui/icons-material/Campaign'; 
+import DescriptionIcon from '@mui/icons-material/Description';
+import PaymentIcon from '@mui/icons-material/Payment';
 import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 
 const drawerWidth = 240;
 
 const AdminLayout = () => {
     const navigate = useNavigate();
-    const userRole = localStorage.getItem('user_role'); 
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const userRole = user.role || 'Admin'; 
 
     const handleLogout = () => {
         localStorage.removeItem('token');
-        localStorage.removeItem('user_role');
+        localStorage.removeItem('user');
         navigate('/admin/login');
     };
 
@@ -49,7 +52,7 @@ const AdminLayout = () => {
                     <Box sx={{ p: 2, textAlign: 'center', bgcolor: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
                         <Typography variant="caption" display="block" color="textSecondary">CURRENTLY LOGGED IN AS</Typography>
                         <Typography variant="subtitle1" fontWeight="bold" sx={{ color: '#1a237e' }}>
-                            {userRole?.toUpperCase() || 'ADMIN'}
+                            {userRole.toUpperCase()}
                         </Typography>
                     </Box>
 
@@ -83,11 +86,33 @@ const AdminLayout = () => {
                         )}
 
                         {/* D. ANNOUNCEMENTS */}
-                        {['Captain', 'Secretary'].includes(userRole) && (
+                        {['Captain', 'Secretary', 'Super Admin'].includes(userRole) && (
                             <ListItem disablePadding>
                                 <ListItemButton onClick={() => navigate('/admin/announcements')}>
                                     <ListItemIcon><CampaignIcon /></ListItemIcon>
                                     <ListItemText primary="Announcements" />
+                                </ListItemButton>
+                            </ListItem>
+                        )}
+
+                        <Divider />
+
+                        {/* E. DOCUMENT TYPES */}
+                        {['Secretary', 'Super Admin'].includes(userRole) && (
+                            <ListItem disablePadding>
+                                <ListItemButton onClick={() => navigate('/admin/document-types')}>
+                                    <ListItemIcon><DescriptionIcon /></ListItemIcon>
+                                    <ListItemText primary="Document Types" />
+                                </ListItemButton>
+                            </ListItem>
+                        )}
+
+                        {/* F. PAYMENTS */}
+                        {['Treasurer', 'Super Admin'].includes(userRole) && (
+                            <ListItem disablePadding>
+                                <ListItemButton onClick={() => navigate('/admin/payments')}>
+                                    <ListItemIcon><PaymentIcon /></ListItemIcon>
+                                    <ListItemText primary="Payments" />
                                 </ListItemButton>
                             </ListItem>
                         )}

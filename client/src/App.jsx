@@ -20,11 +20,12 @@ import QRVerification from './pages/QRVerification';
 import AdminDocumentTypes from './pages/admin/AdminDocumentTypes';
 import AdminPayments from './pages/admin/AdminPayments';
 
-// Admin Route Wrapper Component
+// Admin Route Wrapper Component - using ProtectedAdminRoute instead
 const AdminRouteWrapper = ({ children }) => {
-  const { user } = useAuth();
+  const token = localStorage.getItem('token');
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
   
-  if (!user) {
+  if (!token) {
     return <Navigate to="/admin/login" replace />;
   }
   

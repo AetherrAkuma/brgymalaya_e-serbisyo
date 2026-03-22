@@ -1,34 +1,51 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import { 
     Container, Typography, Table, TableBody, TableCell, 
-    TableContainer, TableHead, TableRow, Chip, Paper 
+    TableContainer, TableHead, TableRow, Chip, Paper, CircularProgress, Box
 } from '@mui/material';
+import { residentAPI } from '../services/api';
 
 const TransactionHistory = () => {
     const [requests, setRequests] = useState([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchHistory = async () => {
-            const token = localStorage.getItem('token');
             try {
-                const res = await axios.get(
-                    `${import.meta.env.VITE_API_BASE_URL}/v1/requests/resident/me`,
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
-                setRequests(res.data.data);
+                const res = await residentAPI.getDashboard();
+                if (res.data.status === 'success') {
+                    setRequests(res.data.data);
+                }
             } catch (err) {
                 console.error("Failed to load history");
+            } finally {
+                setLoading(false);
             }
         };
         fetchHistory();
     }, []);
 
     const getStatusColor = (status) => {
-        if (status === 'Pending') return 'warning';
-        if (status === 'Approved') return 'success';
-        return 'default';
+        switch (status) {
+            case 'Pending': return 'warning';
+            case 'For Verification': return 'warning';
+            case 'For Payment': return 'info';
+            case 'Processing': return 'primary';
+            case 'Ready for Pickup': return 'success';
+            case 'Issued': return 'success';
+            case 'Rejected': return 'error';
+            case 'Cancelled': return 'error';
+            default: return 'default';
+        }
     };
+
+    if (loading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
         <Container maxWidth="lg">
@@ -52,7 +69,7 @@ const TransactionHistory = () => {
                                 <TableRow key={row.request_id}>
                                     <TableCell><strong>{row.reference_no}</strong></TableCell>
                                     <TableCell>{row.type_name}</TableCell>
-                                    <TableCell>{new Date(row.request_date).toLocaleDateString()}</TableCell>
+                                    <TableCell>{new Date(row.date_requested).toLocaleDateString()}</TableCell>
                                     <TableCell>
                                         <Chip label={row.request_status} color={getStatusColor(row.request_status)} size="small" />
                                     </TableCell>

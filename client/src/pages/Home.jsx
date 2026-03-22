@@ -1,14 +1,35 @@
-import { Typography, Grid, Card, CardContent, Button, Container, Box, Paper, useTheme, useMediaQuery } from '@mui/material';
+import { useState, useEffect } from 'react';
+import { Typography, Grid, Card, CardContent, Button, Container, Box, Paper, useTheme, useMediaQuery, CircularProgress } from '@mui/material';
 import { Link } from 'react-router-dom';
 import DescriptionIcon from '@mui/icons-material/Description';
 import SecurityIcon from '@mui/icons-material/Security';
 import SpeedIcon from '@mui/icons-material/Speed';
 import Divider from '@mui/material/Divider';
+import { publicAPI } from '../services/api';
 
 const Home = () => {
     const theme = useTheme();
     const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
     const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
+    const [announcements, setAnnouncements] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchAnnouncements = async () => {
+            try {
+                const response = await publicAPI.getAnnouncements();
+                if (response.data.status === 'success') {
+                    setAnnouncements(response.data.data.slice(0, 3));
+                }
+            } catch (err) {
+                console.error('Failed to fetch announcements:', err);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchAnnouncements();
+    }, []);
 
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -209,125 +230,175 @@ const Home = () => {
         alignItems: 'stretch',
       }}
     >
-      {/* 1st Card */}
-      <Card
-        sx={{
-          flex: 1,
-          maxWidth: 380,
-          backgroundColor: '#2f2f2f',
-          color: '#ffffff',
-          borderRadius: 3,
-          overflow: 'hidden',
-          boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
-          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
-          '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
-          },
-        }}
-      >
-        <Box
-          component="img"
-          src="https://images.unsplash.com/photo-1521737604893-d14cc237f11d?q=80&w=800"
-          alt="System Launch"
-          sx={{ width: '100%', height: 180, objectFit: 'cover' }}
-        />
-        <CardContent sx={{ p: 3 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-            System Launch: E-Serbisyo is Live!
-          </Typography>
-          <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
-          <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
-            January 24, 2026
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
-            We are officially launching the new web portal. Please register your account to begin transacting with the Barangay Hall.
-          </Typography>
-          <Button fullWidth variant="contained" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
-            Read More
-          </Button>
-        </CardContent>
-      </Card>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 4 }}>
+          <CircularProgress sx={{ color: '#fff' }} />
+        </Box>
+      ) : announcements.length > 0 ? (
+        announcements.map((announcement) => (
+          <Card
+            key={announcement.announcement_id}
+            sx={{
+              flex: 1,
+              maxWidth: 380,
+              backgroundColor: '#2f2f2f',
+              color: '#ffffff',
+              borderRadius: 3,
+              overflow: 'hidden',
+              boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
+              transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
+              },
+            }}
+          >
+            {announcement.image_path && (
+              <Box
+                component="img"
+                src={announcement.image_path}
+                alt={announcement.title}
+                sx={{ width: '100%', height: 180, objectFit: 'cover' }}
+              />
+            )}
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                {announcement.title}
+              </Typography>
+              <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
+              <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
+                {new Date(announcement.date_posted).toLocaleDateString()}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
+                {announcement.content_body}
+              </Typography>
+              <Button fullWidth variant="contained" component={Link} to="/announcements" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
+                Read More
+              </Button>
+            </CardContent>
+          </Card>
+        ))
+      ) : (
+        <>
+          {/* Default Cards when no announcements */}
+          <Card
+            sx={{
+              flex: 1,
+              maxWidth: 380,
+              backgroundColor: '#2f2f2f',
+              color: '#ffffff',
+              borderRadius: 3,
+              overflow: 'hidden',
+              boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
+              transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
+              },
+            }}
+          >
+            <Box
+              component="img"
+              src="https://images.unsplash.com/photo-1521737604893-d14cc237f11d?q=80&w=800"
+              alt="System Launch"
+              sx={{ width: '100%', height: 180, objectFit: 'cover' }}
+            />
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                System Launch: E-Serbisyo is Live!
+              </Typography>
+              <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
+              <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
+                January 24, 2026
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
+                We are officially launching the new web portal. Please register your account to begin transacting with the Barangay Hall.
+              </Typography>
+              <Button fullWidth variant="contained" component={Link} to="/register" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
+                Get Started
+              </Button>
+            </CardContent>
+          </Card>
 
-      {/* 2nd Card */}
-      <Card
-        sx={{
-          flex: 1,
-          maxWidth: 380,
-          backgroundColor: '#2f2f2f',
-          color: '#ffffff',
-          borderRadius: 3,
-          overflow: 'hidden',
-          boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
-          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
-          '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
-          },
-        }}
-      >
-        <Box
-          component="img"
-          src="https://images.unsplash.com/photo-1556761175-4b46a572b786?q=80&w=800"
-          alt="Online Clearance"
-          sx={{ width: '100%', height: 180, objectFit: 'cover' }}
-        />
-        <CardContent sx={{ p: 3 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-            Barangay Clearance Online Processing
-          </Typography>
-          <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
-          <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
-            February 2, 2026
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
-            Residents can now request barangay clearance online with faster processing and real-time status updates.
-          </Typography>
-          <Button fullWidth variant="contained" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
-            Read More
-          </Button>
-        </CardContent>
-      </Card>
+          <Card
+            sx={{
+              flex: 1,
+              maxWidth: 380,
+              backgroundColor: '#2f2f2f',
+              color: '#ffffff',
+              borderRadius: 3,
+              overflow: 'hidden',
+              boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
+              transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
+              },
+            }}
+          >
+            <Box
+              component="img"
+              src="https://images.unsplash.com/photo-1556761175-4b46a572b786?q=80&w=800"
+              alt="Online Clearance"
+              sx={{ width: '100%', height: 180, objectFit: 'cover' }}
+            />
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                Barangay Clearance Online Processing
+              </Typography>
+              <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
+              <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
+                February 2, 2026
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
+                Residents can now request barangay clearance online with faster processing and real-time status updates.
+              </Typography>
+              <Button fullWidth variant="contained" component={Link} to="/document-types" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
+                View Documents
+              </Button>
+            </CardContent>
+          </Card>
 
-      {/* 3rd Card */}
-      <Card
-        sx={{
-          flex: 1,
-          maxWidth: 380,
-          backgroundColor: '#2f2f2f',
-          color: '#ffffff',
-          borderRadius: 3,
-          overflow: 'hidden',
-          boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
-          transition: 'transform 0.25s ease, box-shadow 0.25s ease',
-          '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
-          },
-        }}
-      >
-        <Box
-          component="img"
-          src="https://images.unsplash.com/photo-1529070538774-1843cb3265df?q=80&w=800"
-          alt="Community Meeting"
-          sx={{ width: '100%', height: 180, objectFit: 'cover' }}
-        />
-        <CardContent sx={{ p: 3 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-            Community Meeting Announcement
-          </Typography>
-          <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
-          <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
-            February 10, 2026
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
-            Join us for the monthly community meeting to discuss upcoming projects and public services improvements.
-          </Typography>
-          <Button fullWidth variant="contained" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
-            Read More
-          </Button>
-        </CardContent>
-      </Card>
+          <Card
+            sx={{
+              flex: 1,
+              maxWidth: 380,
+              backgroundColor: '#2f2f2f',
+              color: '#ffffff',
+              borderRadius: 3,
+              overflow: 'hidden',
+              boxShadow: '0px 8px 24px rgba(0,0,0,0.35)',
+              transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0px 12px 30px rgba(0,0,0,0.45)',
+              },
+            }}
+          >
+            <Box
+              component="img"
+              src="https://images.unsplash.com/photo-1529070538774-1843cb3265df?q=80&w=800"
+              alt="Community Meeting"
+              sx={{ width: '100%', height: 180, objectFit: 'cover' }}
+            />
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                Community Meeting Announcement
+              </Typography>
+              <Divider sx={{ backgroundColor: '#555', mb: 1.5 }} />
+              <Typography variant="caption" sx={{ display: 'block', color: '#bdbdbd', mb: 1.5 }}>
+                February 10, 2026
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#e0e0e0', lineHeight: 1.6, mb: 3 }}>
+                Join us for the monthly community meeting to discuss upcoming projects and public services improvements.
+              </Typography>
+              <Button fullWidth variant="contained" component={Link} to="/announcements" sx={{ fontSize: 16, borderRadius: 2, py: 1.2, fontWeight: 600, textTransform: 'none' }}>
+                View All
+              </Button>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </Box>
   </Box>
 </Box>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import { Container, Grid, Paper, Typography, CircularProgress, Alert } from '@mui/material';
+import { adminAPI } from '../../services/api';
 
 // StatCard Component
 const StatCard = ({ title, value, color }) => (
@@ -22,15 +22,14 @@ const AdminDashboard = () => {
     useEffect(() => {
         const fetchStats = async () => {
             try {
-                const token = localStorage.getItem('token');
-                // Ensure this matches the updated server route
-                const res = await axios.get(
-                    `${import.meta.env.VITE_API_BASE_URL}/v1/admin/settings`,
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
+                // Fetch pending requests
+                const pendingRes = await adminAPI.getPendingRequests();
                 
-                if (res.data.success) {
-                    setStats(res.data.stats);
+                if (pendingRes.data.status === 'success') {
+                    setStats(prev => ({
+                        ...prev,
+                        pending: pendingRes.data.data.length
+                    }));
                 }
             } catch (err) {
                 console.error("Dashboard Load Error:", err);
@@ -55,17 +54,17 @@ const AdminDashboard = () => {
 
             <Grid container spacing={3}>
                 {/* 1. PENDING (Yellow) */}
-                <Grid size={{ xs: 12, md: 4 }}>
+                <Grid item xs={12} md={4}>
                     <StatCard title="Pending Verifications" value={stats.pending} color="#ff9800" />
                 </Grid>
 
                 {/* 2. PROCESSING / PAID (Blue) */}
-                <Grid size={{ xs: 12, md: 4 }}>
+                <Grid item xs={12} md={4}>
                     <StatCard title="Processing / Paid" value={stats.processing} color="#2196f3" />
                 </Grid>
 
                 {/* 3. RELEASED (Green) */}
-                <Grid size={{ xs: 12, md: 4 }}>
+                <Grid item xs={12} md={4}>
                     <StatCard title="Total Released" value={stats.completed} color="#4caf50" />
                 </Grid>
             </Grid>

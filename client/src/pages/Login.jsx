@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import axios from 'axios';
 import {
     Container, TextField, Button, Typography, Card, CardContent,
     Alert, Box
 } from '@mui/material';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const Login = () => {
     const navigate = useNavigate();
-    const [formData, setFormData] = useState({ email_address: '', password: '' });
+    const { login } = useAuth();
+    const [formData, setFormData] = useState({ email_or_username: '', password: '' });
     const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -18,25 +20,27 @@ const Login = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        setLoading(true);
 
         try {
-            const response = await axios.post(
-                `${import.meta.env.VITE_API_BASE_URL}/v1/auth/login`,
-                formData
-            );
+            const result = await login(formData);
             
-            // Save the Token (Digital ID) to Local Storage
-            localStorage.setItem('token', response.data.token);
-            localStorage.setItem('user', JSON.stringify(response.data.user));
-
-            alert(`Welcome back, ${response.data.user.name}!`);
-            
-            // TODO: Redirect to Dashboard (Phase 4)
-            navigate('/dashboard');
-
+            if (result.success) {
+                // Redirect based on role
+                const user = JSON.parse(localStorage.getItem('user'));
+                if (['Super Admin', 'Secretary', 'Treasurer', 'Captain'].includes(user.role)) {
+                    navigate('/admin/dashboard');
+                } else {
+                    navigate('/dashboard');
+                }
+            } else {
+                setError(result.error || 'Login Failed');
+            }
         } catch (err) {
             console.error(err);
-            setError(err.response?.data?.message || 'Login Failed');
+            setError(err.response?.data?.error || 'Login Failed');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -53,7 +57,7 @@ const Login = () => {
 
                     <form onSubmit={handleSubmit}>
                         <TextField 
-                            fullWidth label="Email Address" name="email_address" 
+                            fullWidth label="Email or Username" name="email_or_username" 
                             margin="normal" required onChange={handleChange} 
                         />
                         <TextField 
@@ -64,8 +68,9 @@ const Login = () => {
                         <Button 
                             type="submit" variant="contained" color="primary" 
                             fullWidth size="large" sx={{ mt: 2 }}
+                            disabled={loading}
                         >
-                            Login
+                            {loading ? 'Logging in...' : 'Login'}
                         </Button>
                         <Link to="/register">
                             <Typography variant="body2" display="block" textAlign="center" sx={{ mt: 2 }}>Don't have an account? Register</Typography>

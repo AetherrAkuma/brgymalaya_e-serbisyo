@@ -36,15 +36,15 @@ const Register = () => {
         try {
             const response = await authAPI.register(formData);
             
-            if (response.success) {
-                setStatus({ type: 'success', message: 'Registration Successful! Redirecting...' });
+            if (response.data.status === 'success') {
+                setStatus({ type: 'success', message: response.data.message || 'Registration Successful! Redirecting...' });
                 
                 // Redirect to Login after 2 seconds
                 setTimeout(() => {
                     navigate('/login'); 
                 }, 2000);
             } else {
-                setStatus({ type: 'error', message: response.error || 'Registration Failed' });
+                setStatus({ type: 'error', message: response.data.error || 'Registration Failed' });
             }
 
         } catch (err) {
