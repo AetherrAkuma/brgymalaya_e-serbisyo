@@ -1,8 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import ResidentLayout from './layouts/ResidentLayout'; // Sidebar Layout
-import PublicLayout from './layouts/PublicLayout'; // Navbar Layout
+import ResidentLayout from './layouts/ResidentLayout';
+import PublicLayout from './layouts/PublicLayout';
 import ResidentDashboard from './pages/ResidentDashboard';
 import RequestDocument from './pages/RequestDocument';
 import Home from './pages/Home';
@@ -13,8 +14,44 @@ import AdminLayout from './layouts/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ProtectedAdminRoute from './components/ProtectedAdminRoute';
 import AdminRequest from './pages/admin/AdminRequest';
+import Announcements from './pages/Announcements';
+import DocumentTypes from './pages/DocumentTypes';
+import QRVerification from './pages/QRVerification';
+import AdminDocumentTypes from './pages/admin/AdminDocumentTypes';
+import AdminPayments from './pages/admin/AdminPayments';
 
-function App() {
+// Admin Route Wrapper Component
+const AdminRouteWrapper = ({ children }) => {
+  const { user } = useAuth();
+  
+  if (!user) {
+    return <Navigate to="/admin/login" replace />;
+  }
+  
+  if (!['Super Admin', 'Secretary', 'Treasurer', 'Captain'].includes(user.role)) {
+    return <Navigate to="/admin/login" replace />;
+  }
+  
+  return children;
+};
+
+function AppContent() {
+  const { loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '18px'
+      }}>
+        Loading...
+      </div>
+    );
+  }
+
   return (
     <BrowserRouter>
       <Routes>
@@ -24,52 +61,47 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/announcements" element={<Announcements />} />
+          <Route path="/document-types" element={<DocumentTypes />} />
+          <Route path="/verify/:qrHash" element={<QRVerification />} />
         </Route>
 
-        {/* === PRIVATE RESIDENT LAYOUT (Sidebar Enabled) === */}
-        {/* WE REMOVED path="/dashboard" here to make sub-routes simpler */}
+        {/* === PRIVATE RESIDENT LAYOUT === */}
         <Route element={
-            <ProtectedRoute>
-              <ResidentLayout />
-            </ProtectedRoute>
+          <ProtectedRoute>
+            <ResidentLayout />
+          </ProtectedRoute>
         }>
-          {/* Now these paths are at the "Root" level but still have the Sidebar */}
           <Route path="/dashboard" element={<ResidentDashboard />} />
           <Route path="/request" element={<RequestDocument />} />
           <Route path="/history" element={<TransactionHistory />} />
         </Route>
 
-        {/* =========================================================
-          ADMIN PORTAL SECURITY ZONE
-      ========================================================= */}
-
-      {/* 1. PUBLIC: The Login Door (Must be OUTSIDE the guard) */}
-      <Route path="/admin/login" element={<AdminLogin />} />
-
-      {/* 2. PROTECTED: Everything inside this wrapper requires a Token */}
-      <Route element={<ProtectedAdminRoute />}>
-
-          {/* All these paths are checked by the Bouncer */}
+        {/* === ADMIN PORTAL === */}
+        <Route path="/admin/login" element={<AdminLogin />} />
+        
+        <Route element={<AdminRouteWrapper />}>
           <Route path="/admin" element={<AdminLayout />}>
-
-              {/* Redirect /admin to /admin/login */}
-              <Route index element={<Navigate to="/admin/login" replace />} />
-
-              <Route path="dashboard" element={<AdminDashboard />} />
-
-              {/* Placeholders */}
-              <Route path="residents" element={<div>Residents DB</div>} />
-              <Route path="announcements" element={<div>Announcements</div>} />
-
-              <Route path="dashboard" element={<AdminDashboard />} />
-              <Route path="requests" element={<AdminRequest />} />
+            <Route index element={<Navigate to="/admin/dashboard" replace />} />
+            <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="requests" element={<AdminRequest />} />
+            <Route path="document-types" element={<AdminDocumentTypes />} />
+            <Route path="payments" element={<AdminPayments />} />
           </Route>
+        </Route>
 
-      </Route>
-      {/* ========================================================= */}
-
+        {/* Redirect unknown routes */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

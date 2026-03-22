@@ -1,10 +1,7 @@
-import { useState } from 'react';
-import axios from 'axios';
-import { 
-    Container, TextField, Button, Typography, Card, CardContent, 
-    Alert, Grid, Box, MenuItem 
-} from '@mui/material';
+import React, { useState } from 'react';
+import { Container, TextField, Button, Typography, Card, CardContent, Alert, Grid, Box, MenuItem } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { authAPI } from '../services/api';
 
 const Register = () => {
     const navigate = useNavigate();
@@ -23,6 +20,7 @@ const Register = () => {
     });
 
     const [status, setStatus] = useState({ type: '', message: '' });
+    const [loading, setLoading] = useState(false);
 
     // Handle Input Change
     const handleChange = (e) => {
@@ -33,24 +31,28 @@ const Register = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setStatus({ type: '', message: '' });
+        setLoading(true);
 
         try {
-            const response = await axios.post(
-                `${import.meta.env.VITE_API_BASE_URL}/v1/auth/resident/register`,
-                formData
-            );
+            const response = await authAPI.register(formData);
             
-            setStatus({ type: 'success', message: 'Registration Successful! Redirecting...' });
-            
-            // Redirect to Login after 2 seconds
-            setTimeout(() => {
-                navigate('/login'); 
-            }, 2000);
+            if (response.success) {
+                setStatus({ type: 'success', message: 'Registration Successful! Redirecting...' });
+                
+                // Redirect to Login after 2 seconds
+                setTimeout(() => {
+                    navigate('/login'); 
+                }, 2000);
+            } else {
+                setStatus({ type: 'error', message: response.error || 'Registration Failed' });
+            }
 
         } catch (err) {
             console.error(err);
-            const errorMsg = err.response?.data?.message || 'Registration Failed';
+            const errorMsg = err.response?.data?.error || err.message || 'Registration Failed';
             setStatus({ type: 'error', message: errorMsg });
+        } finally {
+            setLoading(false);
         }
     };
 

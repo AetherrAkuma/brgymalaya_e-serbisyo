@@ -1,171 +1,338 @@
-import { useState, useEffect } from 'react';
-import axios from 'axios';
-import { 
-    Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, 
-    TableHead, TableRow, Chip, IconButton, Button, Tabs, Tab, Alert, CircularProgress 
-} from '@mui/material';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import RequestModal from '../../components/RequestModal'; 
+import React, { useState, useEffect } from 'react';
+import { Container, Typography, Card, CardContent, Box, Alert, Button, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Select, FormControl, InputLabel } from '@mui/material';
+import { adminAPI } from '../../services/api';
 
-const AdminRequests = () => {
-    // 1. IDENTITY CHECK
-    const userRole = localStorage.getItem('role') || 'Admin'; 
+const AdminRequest = () => {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  
+  // Modal states
+  const [openVerifyModal, setOpenVerifyModal] = useState(false);
+  const [openPaymentModal, setOpenPaymentModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  
+  // Form states
+  const [verifyFormData, setVerifyFormData] = useState({
+    action: 'Approve',
+    rejection_reason: ''
+  });
+  const [paymentFormData, setPaymentFormData] = useState({
+    amount_paid: 0,
+    or_number: '',
+    payor_name: '',
+    payment_status: 'Paid'
+  });
 
-    const [requests, setRequests] = useState([]);
-    const [selectedRequest, setSelectedRequest] = useState(null);
-    const [modalOpen, setModalOpen] = useState(false);
-    const [filterTab, setFilterTab] = useState(userRole === 'Treasurer' ? 'ForPayment' : 'All');
-    const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    fetchRequests();
+  }, []);
 
-    // 2. FETCH DATA
-    const fetchRequests = async () => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/v1/requests/pending`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            if (res.data.success) {
-                setRequests(res.data.requests);
-            }
-        } catch (err) {
-            console.error("Failed to load queue", err);
-        } finally {
-            setLoading(false);
-        }
-    };
+  const fetchRequests = async () => {
+    try {
+      setLoading(true);
+      const response = await adminAPI.getPendingRequests();
+      if (response.data.status === 'success') {
+        setRequests(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching requests:', err);
+      setError('Failed to load requests.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    useEffect(() => {
-        fetchRequests();
-    }, []);
+  const handleVerify = (request) => {
+    setSelectedRequest(request);
+    setVerifyFormData({
+      action: 'Approve',
+      rejection_reason: ''
+    });
+    setOpenVerifyModal(true);
+  };
 
-    // 3. ROLE-BASED FILTERING (Internal Control)
-    const getFilteredRequests = () => {
-        if (userRole === 'Treasurer') {
-            // Treasurer can ONLY see payments to be processed
-            return requests.filter(r => r.request_status === 'ForPayment'); 
-        }
-        if (filterTab === 'All') return requests;
-        return requests.filter(r => r.request_status === filterTab);
-    };
+  const handlePayment = (request) => {
+    setSelectedRequest(request);
+    setPaymentFormData({
+      amount_paid: request.base_fee || 0,
+      or_number: '',
+      payor_name: `${request.first_name} ${request.last_name}`,
+      payment_status: 'Paid'
+    });
+    setOpenPaymentModal(true);
+  };
 
-    const handleOpen = (req) => {
-        setSelectedRequest(req);
-        setModalOpen(true);
-    };
+  const submitVerification = async () => {
+    try {
+      await adminAPI.verifyRequest(selectedRequest.request_id, verifyFormData.action, verifyFormData.rejection_reason);
+      setSuccess('Request verification updated successfully!');
+      setOpenVerifyModal(false);
+      fetchRequests();
+    } catch (err) {
+      console.error('Error verifying request:', err);
+      setError(err.response?.data?.error || 'Failed to verify request.');
+    }
+  };
 
-    const handleClose = () => {
-        setModalOpen(false);
-        setSelectedRequest(null);
-    };
+  const submitPayment = async () => {
+    try {
+      await adminAPI.processPayment({
+        request_id: selectedRequest.request_id,
+        amount_paid: paymentFormData.amount_paid,
+        or_number: paymentFormData.or_number,
+        payor_name: paymentFormData.payor_name,
+        payment_status: paymentFormData.payment_status
+      });
+      setSuccess('Payment processed successfully!');
+      setOpenPaymentModal(false);
+      fetchRequests();
+    } catch (err) {
+      console.error('Error processing payment:', err);
+      setError(err.response?.data?.error || 'Failed to process payment.');
+    }
+  };
 
-    const filteredData = getFilteredRequests();
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Pending': return 'default';
+      case 'For Verification': return 'warning';
+      case 'For Payment': return 'info';
+      case 'Processing': return 'primary';
+      case 'Ready for Pickup': return 'success';
+      case 'Issued': return 'success';
+      case 'Rejected': return 'error';
+      case 'Cancelled': return 'error';
+      default: return 'default';
+    }
+  };
 
-    return (
-        <Box sx={{ p: 3 }}>
-            {/* HEADER */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                <Typography variant="h5" fontWeight="bold">
-                    {userRole === 'Treasurer' ? '💸 Financial Transaction Queue' : '📂 Document Request Queue'}
-                </Typography>
-                <Button startIcon={<RefreshIcon />} onClick={fetchRequests} variant="outlined">
-                    Refresh
-                </Button>
-            </Box>
+  return (
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      <Typography variant="h4" gutterBottom>
+        Document Requests Management
+      </Typography>
 
-            {/* ROLE ALERT */}
-            {userRole === 'Treasurer' && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                    <strong>Treasurer Mode Active:</strong> Showing unpaid transactions only.
-                </Alert>
-            )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
 
-            {/* TABS (Hidden for Treasurer) */}
-            {userRole !== 'Treasurer' && (
-                <Paper sx={{ mb: 2 }}>
-                    <Tabs 
-                        value={filterTab} 
-                        onChange={(e, newVal) => setFilterTab(newVal)}
-                        indicatorColor="primary"
-                        textColor="primary"
-                    >
-                        <Tab label="All" value="All" />
-                        <Tab label="Pending" value="Pending" />
-                        <Tab label="For Payment" value="ForPayment" />
-                        <Tab label="Approved" value="Approved" />
-                        <Tab label="Completed" value="Completed" />
-                    </Tabs>
-                </Paper>
-            )}
+      {success && (
+        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
 
-            {/* DATA TABLE */}
-            <TableContainer component={Paper}>
-                <Table>
-                    <TableHead sx={{ bgcolor: '#f5f5f5' }}>
-                        <TableRow>
-                            <TableCell><strong>Ref No.</strong></TableCell>
-                            <TableCell><strong>Resident</strong></TableCell>
-                            <TableCell><strong>Document</strong></TableCell>
-                            <TableCell><strong>Date Filed</strong></TableCell>
-                            <TableCell><strong>Status</strong></TableCell>
-                            <TableCell align="center"><strong>Action</strong></TableCell>
-                        </TableRow>
-                    </TableHead>
-                    <TableBody>
-                        {loading ? (
-                             <TableRow><TableCell colSpan={6} align="center"><CircularProgress /></TableCell></TableRow>
-                        ) : filteredData.length > 0 ? (
-                            filteredData.map((req) => (
-                                <TableRow key={req.request_id} hover>
-                                    <TableCell>{req.reference_no}</TableCell>
-                                    <TableCell>
-                                        <Typography variant="body2" fontWeight="bold">
-                                            {req.resident_name}
-                                        </Typography>
-                                    </TableCell>
-                                    <TableCell>{req.type_name}</TableCell>
-                                    <TableCell>{new Date(req.date_requested).toLocaleDateString()}</TableCell>
-                                    <TableCell>
-                                        <Chip 
-                                            label={req.request_status} 
-                                            color={
-                                                req.request_status === 'Pending' ? 'warning' :
-                                                req.request_status === 'ForPayment' ? 'info' :
-                                                req.request_status === 'Approved' ? 'success' : 'default'
-                                            } 
-                                            size="small" 
-                                        />
-                                    </TableCell>
-                                    <TableCell align="center">
-                                        <IconButton color="primary" onClick={() => handleOpen(req)}>
-                                            <VisibilityIcon />
-                                        </IconButton>
-                                    </TableCell>
-                                </TableRow>
-                            ))
-                        ) : (
-                            <TableRow>
-                                <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
-                                    <Typography color="textSecondary">
-                                        {userRole === 'Treasurer' ? "No pending payments found." : "No requests found."}
-                                    </Typography>
-                                </TableCell>
-                            </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
-            </TableContainer>
+      {loading ? (
+        <Typography>Loading...</Typography>
+      ) : (
+        requests.map((request) => (
+          <Card key={request.request_id} sx={{ mb: 3 }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
+                <Box>
+                  <Typography variant="h6">
+                    {request.type_name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Reference: {request.reference_no}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Requested: {new Date(request.date_requested).toLocaleDateString()}
+                  </Typography>
+                </Box>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Chip 
+                    label={request.request_status} 
+                    color={getStatusColor(request.request_status)}
+                    sx={{ mb: 1 }}
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    Fee: ₱{request.base_fee}
+                  </Typography>
+                </Box>
+              </Box>
+              
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 3 }}>
+                <Box>
+                  <Typography variant="subtitle2" gutterBottom>Applicant:</Typography>
+                  <Typography variant="body2">{request.first_name} {request.last_name}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" gutterBottom>Purpose:</Typography>
+                  <Typography variant="body2">{request.purpose}</Typography>
+                </Box>
+              </Box>
 
-            {/* MODAL */}
-            <RequestModal 
-                open={modalOpen} 
-                handleClose={handleClose} 
-                request={selectedRequest}
-                refreshData={fetchRequests} 
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                {request.request_status === 'Pending' && (
+                  <Button 
+                    variant="contained" 
+                    size="small"
+                    onClick={() => handleVerify(request)}
+                  >
+                    Verify Request
+                  </Button>
+                )}
+                
+                {request.request_status === 'For Payment' && (
+                  <Button 
+                    variant="contained" 
+                    size="small"
+                    onClick={() => handlePayment(request)}
+                  >
+                    Process Payment
+                  </Button>
+                )}
+
+                {request.request_status === 'Processing' && (
+                  <Button 
+                    variant="contained" 
+                    size="small"
+                    onClick={async () => {
+                      try {
+                        await adminAPI.markReadyForPickup(request.request_id);
+                        setSuccess('Request marked as Ready for Pickup!');
+                        fetchRequests();
+                      } catch (err) {
+                        setError('Failed to update request status.');
+                      }
+                    }}
+                  >
+                    Mark Ready for Pickup
+                  </Button>
+                )}
+
+                {request.request_status === 'Ready for Pickup' && (
+                  <Button 
+                    variant="contained" 
+                    size="small"
+                    onClick={async () => {
+                      try {
+                        await adminAPI.issueDocument(request.request_id);
+                        setSuccess('Document issued successfully!');
+                        fetchRequests();
+                      } catch (err) {
+                        setError('Failed to issue document.');
+                      }
+                    }}
+                  >
+                    Issue Document
+                  </Button>
+                )}
+
+                {request.rejection_reason && (
+                  <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                    Rejection Reason: {request.rejection_reason}
+                  </Typography>
+                )}
+              </Box>
+            </CardContent>
+          </Card>
+        ))
+      )}
+
+      {/* Verification Modal */}
+      <Dialog open={openVerifyModal} onClose={() => setOpenVerifyModal(false)}>
+        <DialogTitle>Verify Request</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Request: {selectedRequest?.reference_no} - {selectedRequest?.type_name}
+          </Typography>
+          
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>Action</InputLabel>
+            <Select
+              value={verifyFormData.action}
+              label="Action"
+              onChange={(e) => setVerifyFormData({...verifyFormData, action: e.target.value})}
+            >
+              <MenuItem value="Approve">Approve</MenuItem>
+              <MenuItem value="Reject">Reject</MenuItem>
+            </Select>
+          </FormControl>
+
+          {verifyFormData.action === 'Reject' && (
+            <TextField
+              label="Rejection Reason"
+              multiline
+              rows={3}
+              value={verifyFormData.rejection_reason}
+              onChange={(e) => setVerifyFormData({...verifyFormData, rejection_reason: e.target.value})}
+              fullWidth
+              required
             />
-        </Box>
-    );
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenVerifyModal(false)}>Cancel</Button>
+          <Button variant="contained" onClick={submitVerification}>
+            {verifyFormData.action}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Payment Modal */}
+      <Dialog open={openPaymentModal} onClose={() => setOpenPaymentModal(false)}>
+        <DialogTitle>Process Payment</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Request: {selectedRequest?.reference_no} - {selectedRequest?.type_name}
+          </Typography>
+          
+          <TextField
+            label="Amount Paid"
+            type="number"
+            value={paymentFormData.amount_paid}
+            onChange={(e) => setPaymentFormData({...paymentFormData, amount_paid: parseFloat(e.target.value)})}
+            fullWidth
+            sx={{ mb: 2 }}
+          />
+          
+          <TextField
+            label="OR Number"
+            value={paymentFormData.or_number}
+            onChange={(e) => setPaymentFormData({...paymentFormData, or_number: e.target.value})}
+            fullWidth
+            sx={{ mb: 2 }}
+            required
+          />
+          
+          <TextField
+            label="Payor Name"
+            value={paymentFormData.payor_name}
+            onChange={(e) => setPaymentFormData({...paymentFormData, payor_name: e.target.value})}
+            fullWidth
+            sx={{ mb: 2 }}
+            required
+          />
+          
+          <FormControl fullWidth>
+            <InputLabel>Payment Status</InputLabel>
+            <Select
+              value={paymentFormData.payment_status}
+              label="Payment Status"
+              onChange={(e) => setPaymentFormData({...paymentFormData, payment_status: e.target.value})}
+            >
+              <MenuItem value="Paid">Paid</MenuItem>
+              <MenuItem value="Unpaid">Unpaid</MenuItem>
+              <MenuItem value="Refunded">Refunded</MenuItem>
+              <MenuItem value="Exempted">Exempted</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenPaymentModal(false)}>Cancel</Button>
+          <Button variant="contained" onClick={submitPayment}>
+            Process Payment
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Container>
+  );
 };
 
-export default AdminRequests;
+export default AdminRequest;
