@@ -36,6 +36,8 @@ app.use((err, req, res, next) => {
 
 app.use(sqlSanitizer);
 
+app.use(cors({ origin: 'http://localhost:5173' }));
+
 // ==========================================
 // PHASE 1.1: DATABASE ENDPOINTS
 // ==========================================
@@ -141,8 +143,10 @@ app.post('/api/v1/auth/resident/register', async (req, res) => {
         }
 
         const [existing] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email_address]);
-        if (existing.length > 0) {
-            return res.status(400).json({ error: 'Email address is already registered.' });
+        
+        // FIX: We must check if the array actually has items inside it, not just if the array exists.
+        if (existing && existing.length > 0) { 
+            return res.status(400).json({ status: 'error', message: 'Email address is already registered.' });
         }
 
         const hashedPassword = hashPassword(password);
@@ -175,7 +179,8 @@ app.post('/api/v1/auth/login', async (req, res) => {
         const { email_or_username, password } = req.body;
 
         if (!email_or_username || !password) {
-            return res.status(400).json({ error: 'Please provide email/username and password.' });
+            // FIX: Changed 'error' to 'message'
+            return res.status(400).json({ status: 'error', message: 'Please provide email/username and password.' });
         }
 
         const hashedPassword = hashPassword(password);
@@ -188,7 +193,9 @@ app.post('/api/v1/auth/login', async (req, res) => {
 
         if (officials.length > 0) {
             const official = officials[0];
-            if (official.account_status !== 'Active') return res.status(403).json({ error: `Account is ${official.account_status}. Please contact the Super Admin.` });
+            if (official.account_status !== 'Active') {
+                return res.status(403).json({ status: 'error', message: `Account is ${official.account_status}. Please contact the Super Admin.` });
+            }
             
             await db.query('UPDATE tbl_BarangayOfficials SET last_login = NOW() WHERE user_id = ?', [official.user_id]);
             const token = generateToken({ id: official.user_id, role: official.role, username: official.username });
@@ -203,14 +210,20 @@ app.post('/api/v1/auth/login', async (req, res) => {
 
         if (residents.length > 0) {
             const resident = residents[0];
-            if (resident.account_status === 'Pending') return res.status(403).json({ error: 'Your account is still pending verification by Barangay Officials.' });
-            if (resident.account_status === 'Blocked') return res.status(403).json({ error: 'Your account has been blocked. Please visit the Barangay Hall.' });
+            // FIX: Standardized the pending and blocked messages
+            if (resident.account_status === 'Pending') {
+                return res.status(403).json({ status: 'error', message: 'Your account is still pending verification by Barangay Officials.' });
+            }
+            if (resident.account_status === 'Blocked') {
+                return res.status(403).json({ status: 'error', message: 'Your account has been blocked. Please visit the Barangay Hall.' });
+            }
 
             const token = generateToken({ id: resident.resident_id, role: 'Resident', username: resident.email_address });
             return res.status(200).json({ status: 'success', message: 'Resident login successful', token, role: 'Resident' });
         }
 
-        return res.status(401).json({ error: 'Invalid credentials. Please check your username/email and password.' });
+        // FIX: Standardized the invalid credentials message
+        return res.status(401).json({ status: 'error', message: 'Invalid credentials. Please check your username/email and password.' });
 
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });

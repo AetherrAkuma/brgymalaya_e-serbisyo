@@ -1,109 +1,60 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './contexts/AuthContext.js';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import ResidentLayout from './layouts/ResidentLayout';
+
+// Import our Layouts
 import PublicLayout from './layouts/PublicLayout';
-import ResidentDashboard from './pages/ResidentDashboard';
-import RequestDocument from './pages/RequestDocument';
-import Home from './pages/Home';
-import ProtectedRoute from './components/ProtectedRoute';
-import TransactionHistory from './pages/TransactionHistory';
-import AdminLogin from './pages/admin/AdminLogin';
+import ResidentLayout from './layouts/ResidentLayout';
 import AdminLayout from './layouts/AdminLayout';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import ProtectedAdminRoute from './components/ProtectedAdminRoute';
-import AdminRequest from './pages/admin/AdminRequest';
-import Announcements from './pages/Announcements';
-import DocumentTypes from './pages/DocumentTypes';
-import QRVerification from './pages/QRVerification';
-import AdminDocumentTypes from './pages/admin/AdminDocumentTypes';
-import AdminPayments from './pages/admin/AdminPayments';
+import Login from './pages/public/Login';
+import Home from './pages/public/Home';
 
-// Admin Route Wrapper Component - using ProtectedAdminRoute instead
-const AdminRouteWrapper = ({ children }) => {
-  const token = localStorage.getItem('token');
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
-  
-  if (!token) {
-    return <Navigate to="/admin/login" replace />;
-  }
-  
-  if (!['Super Admin', 'Secretary', 'Treasurer', 'Captain'].includes(user.role)) {
-    return <Navigate to="/admin/login" replace />;
-  }
-  
-  return children;
-};
+// --- TEMPORARY PLACEHOLDER PAGES ---
+// We will replace these with real, styled components in the next steps
+const VerifyQR = () => <h1>QR Document Verification Scanner</h1>;
 
-function AppContent() {
-  const { loading } = useAuth();
+const ResidentDashboard = () => <h1>Welcome, Resident! (Dashboard)</h1>;
+const ResidentRequests = () => <h1>My Document Requests</h1>;
 
-  if (loading) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        fontSize: '18px'
-      }}>
-        Loading...
-      </div>
-    );
-  }
+const AdminDashboard = () => <h1>Admin Operational Dashboard</h1>;
+const AdminQueue = () => <h1>Document Requests Queue</h1>;
 
+export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         
-        {/* === PUBLIC LAYOUT (Home, Login, Register) === */}
-        <Route element={<PublicLayout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/announcements" element={<Announcements />} />
-          <Route path="/document-types" element={<DocumentTypes />} />
-          <Route path="/verify/:qrHash" element={<QRVerification />} />
+        {/* ============================== */}
+        {/* 1. PUBLIC ROUTES               */}
+        {/* ============================== */}
+        <Route path="/" element={<PublicLayout />}>
+          <Route index element={<Home />} />
+          <Route path="login" element={<Login />} />
+          <Route path="verify" element={<VerifyQR />} />
         </Route>
 
-        {/* === PRIVATE RESIDENT LAYOUT === */}
-        <Route element={
-          <ProtectedRoute>
-            <ResidentLayout />
-          </ProtectedRoute>
-        }>
-          <Route path="/dashboard" element={<ResidentDashboard />} />
-          <Route path="/request" element={<RequestDocument />} />
-          <Route path="/history" element={<TransactionHistory />} />
+        {/* ============================== */}
+        {/* 2. RESIDENT PROTECTED ROUTES   */}
+        {/* ============================== */}
+        <Route path="/resident" element={<ResidentLayout />}>
+          {/* Automatically redirect /resident to /resident/dashboard */}
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<ResidentDashboard />} />
+          <Route path="requests" element={<ResidentRequests />} />
         </Route>
 
-        {/* === ADMIN PORTAL === */}
-        <Route path="/admin/login" element={<AdminLogin />} />
-        
-        <Route element={<AdminRouteWrapper />}>
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Navigate to="/admin/dashboard" replace />} />
-            <Route path="dashboard" element={<AdminDashboard />} />
-            <Route path="requests" element={<AdminRequest />} />
-            <Route path="document-types" element={<AdminDocumentTypes />} />
-            <Route path="payments" element={<AdminPayments />} />
-          </Route>
+        {/* ============================== */}
+        {/* 3. ADMIN PROTECTED ROUTES      */}
+        {/* ============================== */}
+        <Route path="/admin" element={<AdminLayout />}>
+          {/* Automatically redirect /admin to /admin/dashboard */}
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<AdminDashboard />} />
+          <Route path="queue" element={<AdminQueue />} />
         </Route>
 
-        {/* Redirect unknown routes */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Catch-All 404 Route */}
+        <Route path="*" element={<h1>404 - Page Not Found</h1>} />
+
       </Routes>
     </BrowserRouter>
   );
 }
-
-function App() {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
-  );
-}
-
-export default App;
