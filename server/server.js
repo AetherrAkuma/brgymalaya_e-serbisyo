@@ -219,7 +219,13 @@ app.post('/api/v1/auth/login', async (req, res) => {
             }
 
             const token = generateToken({ id: resident.resident_id, role: 'Resident', username: resident.email_address });
-            return res.status(200).json({ status: 'success', message: 'Resident login successful', token, role: 'Resident' });
+            return res.status(200).json({ 
+                status: 'success', 
+                message: 'Resident login successful', 
+                token, 
+                role: 'Resident',
+                first_name: resident.first_name 
+            });
         }
 
         // FIX: Standardized the invalid credentials message
@@ -480,16 +486,19 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin
 // ==========================================
 
 // Endpoint 21: Submit a Document Request (Resident Only)
-app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), async (req, res) => {
+// Endpoint 21: Submit a Document Request (Resident Only)
+// FIX: Added upload.single('id_proof_image') to parse the FormData!
+app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.single('id_proof_image'), async (req, res) => {
     try {
+        // Now req.body will correctly contain the text fields
         const { doc_type_id, purpose } = req.body;
-        const resident_id = req.user.id; // Automatically grabbed securely from the JWT
+        const resident_id = req.user.id; 
 
         if (!doc_type_id || !purpose) {
-            return res.status(400).json({ error: 'doc_type_id and purpose are required.' });
+            return res.status(400).json({ status: 'error', message: 'doc_type_id and purpose are required.' });
         }
 
-        // Active Request Constraint (5.2): Check if Resident already has a pending/processing request for this EXACT document type
+        // Active Request Constraint (5.2)
         const [existingActive] = await db.query(`
             SELECT request_id FROM tbl_Requests 
             WHERE resident_id = ? AND doc_type_id = ? 
@@ -498,11 +507,31 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), async (req, res
 
         if (existingActive.length > 0) {
             return res.status(403).json({ 
-                error: 'You already have an active request for this document type. Please wait for it to be completed or rejected before filing another.' 
+                status: 'error', 
+                message: 'You already have an active request for this document type. Please wait for it to be completed or rejected before filing another.' 
             });
         }
 
-        // Generate a Unique Reference Number (e.g., REQ-20260130-1234)
+        // --- NEW: Securely Handle the ID Proof Upload ---
+        if (req.file && req.file.buffer) {
+            const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+            
+            // Determine extension
+            let ext = '.bin';
+            if (req.file.mimetype === 'image/jpeg') ext = '.jpg';
+            else if (req.file.mimetype === 'image/png') ext = '.png';
+            else if (req.file.mimetype === 'application/pdf') ext = '.pdf';
+            
+            const savedFilename = `idproof_${resident_id}_${uniqueSuffix}${ext}.enc`;
+            
+            // Encrypt and save to the vault using your Phase 1.4 utility
+            encryptAndSaveFile(req.file.buffer, savedFilename);
+            
+            // Update the resident's profile with their new ID proof
+            await db.query('UPDATE tbl_Residents SET id_proof_image = ? WHERE resident_id = ?', [savedFilename, resident_id]);
+        }
+
+        // Generate a Unique Reference Number
         const dateString = new Date().toISOString().slice(0, 10).replace(/-/g, '');
         const randomStr = Math.floor(1000 + Math.random() * 9000);
         const reference_no = `REQ-${dateString}-${randomStr}`;
@@ -512,19 +541,17 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), async (req, res
             INSERT INTO tbl_Requests (resident_id, doc_type_id, reference_no, purpose, request_status)
             VALUES (?, ?, ?, ?, 'Pending')
         `;
-        const [result] = await db.query(insertQuery, [resident_id, doc_type_id, reference_no, purpose]);
-
-        // Email Hook Simulation (5.4)
-        console.log(`[EMAIL SIMULATION] Sent to Resident ID ${resident_id}: Your request ${reference_no} has been received and is Pending Verification.`);
+        const result = await db.query(insertQuery, [resident_id, doc_type_id, reference_no, purpose]);
 
         res.status(201).json({ 
             status: 'success', 
             message: 'Document request submitted successfully.',
             reference_no: reference_no,
-            request_id: result.insertId
+            request_id: Number(result.insertId) // FIX: Safely converted BigInt to Number
         });
 
     } catch (error) {
+        console.error("[REQUEST SUBMIT ERROR]:", error);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
@@ -640,6 +667,40 @@ app.put('/api/v1/residents/me/id-proof', verifyJWT, roleGuard(['Resident']), asy
         await db.query('UPDATE tbl_Residents SET id_proof_image = ? WHERE resident_id = ?', [id_proof_filename, resident_id]);
         res.status(200).json({ status: 'success', message: 'ID Proof updated successfully.' });
     } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 24.6: Get My Profile (Resident Only)
+app.get('/api/v1/residents/me/profile', verifyJWT, roleGuard(['Resident']), async (req, res) => {
+    try {
+        const residentId = req.user.id;
+
+        // 1. Match the real column names: address_street and contact_number
+        const [rows] = await db.query(
+            'SELECT first_name, last_name, email_address, contact_number, address_street, account_status FROM tbl_Residents WHERE resident_id = ?', 
+            [residentId]
+        );
+
+        if (rows.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'User not found.' });
+        }
+
+        const user = rows[0];
+
+        // 2. Decrypt the contact number (using your Phase 1 utility)
+        // If it was encrypted with encryptData, we use decryptData here.
+        try {
+            if (user.contact_number) {
+                user.contact_number = decryptData(user.contact_number);
+            }
+        } catch (decErr) {
+            console.error("Decryption failed, showing raw value instead.");
+        }
+
+        res.status(200).json({ status: 'success', data: user });
+    } catch (error) {
+        console.error("PROFILE FETCH ERROR:", error.message);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });

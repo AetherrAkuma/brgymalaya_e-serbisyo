@@ -40,7 +40,6 @@ export default function ResidentLayout() {
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/resident/dashboard' },
     { text: 'My Requests', icon: <FolderIcon />, path: '/resident/requests' },
-    { text: 'Notifications', icon: <NotificationsIcon />, path: '/resident/notifications' },
     { text: 'My Profile', icon: <PersonIcon />, path: '/resident/profile' },
   ];
 
@@ -99,7 +98,7 @@ export default function ResidentLayout() {
           onClick={handleLogout}
           sx={{ py: 1.5, fontWeight: 'bold' }}
         >
-          Secure Logout
+          Logout
         </Button>
       </Box>
     </Box>

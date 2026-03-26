@@ -45,14 +45,17 @@ export default function Login() {
     try {
       if (isLoginView) {
         // --- LOGIN LOGIC ---
+        // --- LOGIN LOGIC ---
         const response = await api.post('/auth/login', {
           email_or_username: formData.email_address,
           password: formData.password
         });
         
-        // Save token and redirect
+        // Save token, role, and the newly added first_name
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('role', response.data.role);
+        localStorage.setItem('first_name', response.data.first_name); // ADD THIS
+        
         navigate('/resident/dashboard');
 
       } else {

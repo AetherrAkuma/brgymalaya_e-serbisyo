@@ -6,12 +6,14 @@ import ResidentLayout from './layouts/ResidentLayout';
 import AdminLayout from './layouts/AdminLayout';
 import Login from './pages/public/Login';
 import Home from './pages/public/Home';
+import ResidentDashboard from './pages/resident/Dashboard';
+import RequestWizard from './pages/resident/RequestWizard';
+import MyRequests from './pages/resident/MyRequests';
+import Profile from './pages/resident/Profile';
 
 // --- TEMPORARY PLACEHOLDER PAGES ---
 // We will replace these with real, styled components in the next steps
 const VerifyQR = () => <h1>QR Document Verification Scanner</h1>;
-
-const ResidentDashboard = () => <h1>Welcome, Resident! (Dashboard)</h1>;
 const ResidentRequests = () => <h1>My Document Requests</h1>;
 
 const AdminDashboard = () => <h1>Admin Operational Dashboard</h1>;
@@ -38,7 +40,9 @@ export default function App() {
           {/* Automatically redirect /resident to /resident/dashboard */}
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<ResidentDashboard />} />
-          <Route path="requests" element={<ResidentRequests />} />
+          <Route path="wizard" element={<RequestWizard />} />
+          <Route path="requests" element={<MyRequests />} />
+          <Route path="profile" element={<Profile />} />
         </Route>
 
         {/* ============================== */}
