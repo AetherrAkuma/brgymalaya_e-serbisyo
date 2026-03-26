@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Feb 24, 2026 at 01:43 PM
+-- Generation Time: Mar 26, 2026 at 04:14 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -75,7 +75,8 @@ INSERT INTO `tbl_auditlogs` (`log_id`, `user_id`, `table_affected`, `record_id`,
 (1, 1, 'tbl_BarangayOfficials', 2, 'CREATE', NULL, '{\"official_id\":\"SEC-001\",\"username\":\"johndoe\",\"role\":\"Secretary\"}', '2026-02-24 20:38:04', '::1', 'Official'),
 (2, 1, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Active\"}', '{\"account_status\":\"Inactive\"}', '2026-02-24 20:38:13', '::1', 'Official'),
 (3, 1, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Inactive\"}', '{\"account_status\":\"Suspended\"}', '2026-02-24 20:38:16', '::1', 'Official'),
-(4, 1, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Suspended\"}', '{\"account_status\":\"Active\"}', '2026-02-24 20:38:18', '::1', 'Official');
+(4, 1, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Suspended\"}', '{\"account_status\":\"Active\"}', '2026-02-24 20:38:18', '::1', 'Official'),
+(5, 1, 'tbl_BarangayOfficials', 3, 'CREATE', NULL, '{\"official_id\":\"CAP-001\",\"username\":\"marias\",\"role\":\"Captain\"}', '2026-03-22 20:43:44', '::1', 'Official');
 
 -- --------------------------------------------------------
 
@@ -101,8 +102,9 @@ CREATE TABLE `tbl_barangayofficials` (
 --
 
 INSERT INTO `tbl_barangayofficials` (`user_id`, `official_id`, `full_name`, `email_official`, `username`, `password_hash`, `role`, `account_status`, `auth_token`, `last_login`) VALUES
-(1, 'SA-001', 'System Administrator', 'admin@eserbisyo.com', 'superadmin', '0eeaa9fdda267f5bf6f0b4fe2fabb4133c1b8689d02832052fb90d129ea3093f', 'Super Admin', 'Active', NULL, '2026-02-24 20:37:23'),
-(2, 'SEC-001', 'John Doe', 'john@brgy.gov.ph', 'johndoe', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Secretary', 'Active', NULL, NULL);
+(1, 'SA-001', 'System Administrator', 'admin@eserbisyo.com', 'superadmin', '0eeaa9fdda267f5bf6f0b4fe2fabb4133c1b8689d02832052fb90d129ea3093f', 'Super Admin', 'Active', NULL, '2026-03-22 20:43:18'),
+(2, 'SEC-001', 'John Doe', 'john@brgy.gov.ph', 'johndoe', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Secretary', 'Active', NULL, NULL),
+(3, 'CAP-001', 'Maria Santos', 'admin1@brgy.gov.ph', 'marias', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', 'Captain', 'Active', NULL, '2026-03-22 20:51:35');
 
 -- --------------------------------------------------------
 
@@ -250,7 +252,12 @@ CREATE TABLE `tbl_residents` (
 --
 
 INSERT INTO `tbl_residents` (`resident_id`, `first_name`, `middle_name`, `last_name`, `date_of_birth`, `civil_status`, `address_street`, `email_address`, `contact_number`, `password_hash`, `id_proof_image`, `account_status`) VALUES
-(1, 'test', NULL, 'testt', '2020-01-01', 'Single', 'kahit saan', 'test@gmail.com', '7d5390daa3c63194f01294d0607e7d67:32ff3ce0a21aa7d92432be3f79acecf78c4d5e16f1f52f16c2977d568e02762d', 'ecd71870d1963316a97e3ac3408c9835ad8cf0f3c1bc703527c30265534f75ae', 'secure_dummy_id_12345.enc', 'Active');
+(1, 'test', NULL, 'testt', '2020-01-01', 'Single', 'kahit saan', 'test@gmail.com', '7d5390daa3c63194f01294d0607e7d67:32ff3ce0a21aa7d92432be3f79acecf78c4d5e16f1f52f16c2977d568e02762d', 'ecd71870d1963316a97e3ac3408c9835ad8cf0f3c1bc703527c30265534f75ae', 'secure_dummy_id_12345.enc', 'Active'),
+(2, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test1@gmail.com', 'c0785a7e07b7201d3f11e09503f2f152:15a97367daa8eb25ed9a10f5035960f0', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Active'),
+(3, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test3@gmail.com', 'e0d5889f2e4dd7018712a7b5b889b1a0:61568b82807534388fc6fd800b77729c', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Pending'),
+(4, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test4@gmail.com', '7bf3400acf0a391606543e688661f4d4:dca9773f3fdf091e8d5faa12e3deb16d', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Active'),
+(5, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test5@gmail.com', 'b65dd9112d85dd3f2a27042574c31009:f3149400f3288446ed6e68af006c3fb1', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Pending'),
+(6, 'Aether', NULL, 'Akuma', '1985-01-01', 'Single', 'asfdasfgawrgawda', 'test67@gmail.com', '999cfabc96ef1ef876318193c3e50ba2:9b915bab412587c257e4f308ea113d7d', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Pending');
 
 -- --------------------------------------------------------
 
@@ -373,13 +380,13 @@ ALTER TABLE `tbl_announcements`
 -- AUTO_INCREMENT for table `tbl_auditlogs`
 --
 ALTER TABLE `tbl_auditlogs`
-  MODIFY `log_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `log_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `tbl_barangayofficials`
 --
 ALTER TABLE `tbl_barangayofficials`
-  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `tbl_digitalsignatures`
@@ -415,7 +422,7 @@ ALTER TABLE `tbl_requests`
 -- AUTO_INCREMENT for table `tbl_residents`
 --
 ALTER TABLE `tbl_residents`
-  MODIFY `resident_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `resident_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `tbl_systemsettings`
