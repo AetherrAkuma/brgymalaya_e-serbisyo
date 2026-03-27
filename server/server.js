@@ -455,21 +455,42 @@ app.put('/api/v1/admin/document-types/:id/layout', verifyJWT, roleGuard(['Super 
 });
 
 // Endpoint 20: Create an Announcement (Super Admin, Captain, Secretary)
-app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Secretary', 'Captain']), async (req, res) => {
-    try {
-        const { title, content_body, target_audience, is_pinned, status, expiry_date } = req.body;
+// ==========================================
+// PHASE: ANNOUNCEMENTS MANAGER
+// ==========================================
 
-        if (!title || !content_body) return res.status(400).json({ error: 'title and content_body are required.' });
+// Endpoint 38: Get All Announcements (Admin View)
+app.get('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+    try {
+        const query = `
+            SELECT a.*, o.full_name as posted_by_name 
+            FROM tbl_announcements a
+            LEFT JOIN tbl_BarangayOfficials o ON a.posted_by = o.user_id
+            ORDER BY a.is_pinned DESC, a.date_posted DESC
+        `;
+        const [announcements] = await db.query(query);
+        res.status(200).json({ status: 'success', data: announcements });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 39: Create Announcement
+// Endpoint 39: Create Announcement (Supports native image_path)
+app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Captain', 'Secretary', 'Admin']), async (req, res) => {
+    try {
+        const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path } = req.body;
+        const posted_by = req.user.id;
 
         const insertQuery = `
-            INSERT INTO tbl_Announcements 
-            (title, content_body, target_audience, is_pinned, status, expiry_date, posted_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tbl_announcements (title, content_body, target_audience, is_pinned, status, expiry_date, image_path, posted_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
-
+        
         await db.query(insertQuery, [
-            title, content_body, target_audience || 'All', is_pinned || false, 
-            status || 'Draft', expiry_date || null, req.user.id
+            title, content_body, target_audience || 'All', 
+            is_pinned ? 1 : 0, status || 'Draft', 
+            expiry_date || null, image_path || null, posted_by
         ]);
 
         res.status(201).json({ status: 'success', message: 'Announcement created successfully.' });
@@ -478,8 +499,101 @@ app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Se
     }
 });
 
-// Endpoint 20.5: Manage Resident Account Status (Super Admin / Secretary)
-app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin', 'Secretary']), async (req, res) => {
+// Endpoint 40: Update Announcement (Supports native image_path)
+app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Super Admin', 'Captain', 'Secretary', 'Admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path } = req.body;
+
+        if (title && content_body) {
+            const updateQuery = `
+                UPDATE tbl_announcements 
+                SET title = ?, content_body = ?, target_audience = ?, is_pinned = ?, status = ?, expiry_date = ?, image_path = ?
+                WHERE announcement_id = ?
+            `;
+            await db.query(updateQuery, [
+                title, content_body, target_audience, 
+                is_pinned ? 1 : 0, status, 
+                expiry_date || null, image_path || null, id
+            ]);
+        } else {
+            // Quick toggle for pin/status from the table
+            const updateQuery = `UPDATE tbl_announcements SET is_pinned = ?, status = ? WHERE announcement_id = ?`;
+            await db.query(updateQuery, [is_pinned ? 1 : 0, status, id]);
+        }
+
+        res.status(200).json({ status: 'success', message: 'Announcement updated successfully.' });
+    } catch (error) {
+        console.error("[ANNOUNCEMENT UPDATE ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 41: Delete Announcement
+app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Super Admin', 'Captain']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        await db.query('DELETE FROM tbl_announcements WHERE announcement_id = ?', [id]);
+        res.status(200).json({ status: 'success', message: 'Announcement deleted.' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 37: Get All Residents for Admin Verification
+app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin', 'Secretary', 'Captain']), async (req, res) => {
+    try {
+        const { account_status } = req.body;
+        const { id } = req.params;
+        const userRole = req.user.role; // Extracted from your JWT token
+
+        if (!['Pending', 'Active', 'Blocked'].includes(account_status)) {
+            return res.status(400).json({ error: "Invalid status. Must be 'Pending', 'Active', or 'Blocked'." });
+        }
+
+        // 🛡️ STRICT SECURITY RULE: Only Captain and Super Admin can block accounts
+        if (account_status === 'Blocked' && !['Super Admin', 'Captain'].includes(userRole)) {
+            return res.status(403).json({ 
+                error: "Unauthorized action. Only the Barangay Captain or Super Admin can block a resident's account." 
+            });
+        }
+
+        const [result] = await db.query(
+            'UPDATE tbl_Residents SET account_status = ? WHERE resident_id = ?',
+            [account_status, id]
+        );
+
+        if (result.affectedRows === 0) return res.status(404).json({ error: 'Resident not found.' });
+
+        res.status(200).json({ 
+            status: 'success', 
+            message: `Resident account successfully marked as ${account_status}.` 
+        });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 37: Get All Residents for Admin Verification (All Officials Can View)
+app.get('/api/v1/admin/residents', verifyJWT, roleGuard(['Super Admin', 'Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+    try {
+        const query = `
+            SELECT resident_id, first_name, middle_name, last_name, email_address, 
+                   contact_number, address_street, account_status, id_proof_image
+            FROM tbl_Residents
+            ORDER BY CASE WHEN account_status = 'Pending' THEN 1 ELSE 2 END, last_name ASC
+        `;
+        const [residents] = await db.query(query);
+        
+        res.status(200).json({ status: 'success', data: residents });
+    } catch (error) {
+        console.error("[FETCH RESIDENTS ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Upgraded Endpoint 20.5: Manage Resident Account Status
+app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin', 'Captain', 'Admin', 'Secretary']), async (req, res) => {
     try {
         const { account_status } = req.body;
         const { id } = req.params;
@@ -645,7 +759,7 @@ app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Super Ad
 
 // Endpoint 24: Initial Verification (Secretary / Super Admin)
 // Upgraded Endpoint 24: Initial Verification (With Audit Logging)
-app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Secretary', 'Super Admin', 'Captain', 'Treasurer']), async (req, res) => {
+app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'Secretary', 'Super Admin', 'Captain', 'Treasurer']), async (req, res) => {
     try {
         const { action, rejection_reason } = req.body; // action: 'Approve' or 'Reject'
         const { request_id } = req.params;
@@ -1170,6 +1284,8 @@ app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secr
     } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
+
+
 // ==========================================
 // PHASE 7: DOCUMENT GENERATION & CRYPTOGRAPHY (Continued)
 // ==========================================
@@ -1261,7 +1377,7 @@ app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Super Admin']), async
         }
 
         // Validate role
-        const validRoles = ['Secretary', 'Treasurer', 'Captain'];
+        const validRoles = ['Admin', 'Secretary', 'Treasurer', 'Captain', 'Super Admin'];
         if (!validRoles.includes(role)) {
             return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
         }

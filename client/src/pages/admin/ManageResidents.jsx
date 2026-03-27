@@ -1,0 +1,290 @@
+import { useState, useEffect } from 'react';
+import { 
+  Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
+  TableHead, TableRow, Chip, Button, CircularProgress, Dialog, DialogTitle, 
+  DialogContent, DialogActions, Grid, TextField, InputAdornment, Tooltip
+} from '@mui/material';
+
+// Icons
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
+import BlockIcon from '@mui/icons-material/Block';
+import PendingIcon from '@mui/icons-material/Pending';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import SearchIcon from '@mui/icons-material/Search';
+import HowToRegIcon from '@mui/icons-material/HowToReg';
+
+import api from '../../utils/axios';
+
+export default function ManageResidents() {
+  const [residents, setResidents] = useState([]);
+  const [filteredResidents, setFilteredResidents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Modal & Processing States
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Secure Image Viewer State
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  // --- ROLE-BASED ACCESS CONTROL ---
+  const userRole = localStorage.getItem('role') || 'Official';
+  
+  // Who can activate an account?
+  const canActivate = ['Super Admin', 'Captain', 'Admin', 'Secretary'].includes(userRole);
+  
+  // Who can block or suspend an account?
+  const canBlockOrSuspend = ['Super Admin', 'Captain'].includes(userRole);
+
+  useEffect(() => { 
+    fetchResidents(); 
+  }, []);
+
+  const fetchResidents = async () => {
+    try {
+      const res = await api.get('/admin/residents');
+      setResidents(res.data.data);
+      setFilteredResidents(res.data.data);
+    } catch (err) { 
+      console.error("Failed to fetch residents", err); 
+    } finally { 
+      setLoading(false); 
+    }
+  };
+
+  useEffect(() => {
+    const lowerQuery = searchQuery.toLowerCase();
+    const filtered = residents.filter(r => 
+      r.first_name.toLowerCase().includes(lowerQuery) || 
+      r.last_name.toLowerCase().includes(lowerQuery) ||
+      r.email_address.toLowerCase().includes(lowerQuery)
+    );
+    setFilteredResidents(filtered);
+  }, [searchQuery, residents]);
+
+  const handleOpenModal = async (user) => {
+    setSelectedUser(user);
+    setModalOpen(true);
+    
+    // Auto-fetch and decrypt ID proof securely
+    if (user.id_proof_image) {
+      try {
+        const response = await api.get(`/admin/view-file/${user.id_proof_image}`, { responseType: 'blob' });
+        setPreviewUrl(URL.createObjectURL(response.data));
+      } catch (err) {
+        console.error("Failed to decrypt ID proof");
+      }
+    }
+  };
+
+  const handleCloseModal = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setModalOpen(false);
+    setSelectedUser(null);
+    setPreviewUrl(null);
+  };
+
+  const handleUpdateStatus = async (newStatus) => {
+    setIsProcessing(true);
+    try {
+      await api.put(`/admin/residents/${selectedUser.resident_id}/status`, { account_status: newStatus });
+      handleCloseModal();
+      fetchResidents(); // Refresh the table
+    } catch (err) { 
+      alert(err.response?.data?.error || "Failed to update account status."); 
+    } finally { 
+      setIsProcessing(false); 
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'Pending': return 'warning';
+      case 'Active': return 'success';
+      case 'Blocked': return 'error';
+      default: return 'default';
+    }
+  };
+
+  if (loading) return <Box sx={{ mt: 10, textAlign: 'center' }}><CircularProgress /></Box>;
+
+  return (
+    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 3, animation: 'fadeIn 0.5s' }}>
+      <Typography variant="h4" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <HowToRegIcon fontSize="large" color="primary" /> 
+        Resident Management
+      </Typography>
+      <Typography color="text.secondary" sx={{ mb: 4 }}>
+        Verify identities and manage portal access for barangay constituents.
+      </Typography>
+
+      {/* SEARCH BAR */}
+      <TextField
+        fullWidth
+        variant="outlined"
+        placeholder="Search residents by name or email..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        sx={{ mb: 4, bgcolor: '#fff' }}
+        InputProps={{
+          startAdornment: <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment>,
+        }}
+      />
+
+      {/* RESIDENTS TABLE */}
+      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+        <Table sx={{ minWidth: 800 }}>
+          <TableHead sx={{ bgcolor: '#1e293b' }}>
+            <TableRow>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Name</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Email Address</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Street Address</TableCell>
+              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Account Status</TableCell>
+              <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Action</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filteredResidents.length === 0 ? (
+              <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4 }}>No residents found.</TableCell></TableRow>
+            ) : (
+              filteredResidents.map((row) => (
+                <TableRow key={row.resident_id} hover>
+                  <TableCell fontWeight="bold">{row.first_name} {row.last_name}</TableCell>
+                  <TableCell>{row.email_address}</TableCell>
+                  <TableCell>{row.address_street}</TableCell>
+                  <TableCell>
+                    <Chip label={row.account_status} color={getStatusColor(row.account_status)} size="small" sx={{ fontWeight: 'bold' }} />
+                  </TableCell>
+                  <TableCell align="center">
+                    <Button 
+                      variant="outlined" 
+                      color="primary"
+                      size="small" 
+                      startIcon={<VisibilityIcon />}
+                      onClick={() => handleOpenModal(row)}
+                      sx={{ borderRadius: 2 }}
+                    >
+                      View Profile
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      {/* VERIFICATION MODAL */}
+      <Dialog open={modalOpen} onClose={handleCloseModal} maxWidth="md" fullWidth>
+        {selectedUser && (
+          <>
+            <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white', fontWeight: 'bold' }}>
+              Resident Profile Review
+            </DialogTitle>
+            <DialogContent dividers sx={{ p: 0 }}>
+              <Grid container sx={{ minHeight: 400 }}>
+                
+                {/* Left Side: Profile Information */}
+                <Grid item xs={12} md={5} sx={{ p: 3, borderRight: '1px solid #ddd', bgcolor: '#fafafa' }}>
+                  <Typography variant="overline" color="text.secondary" fontWeight="bold">Personal Information</Typography>
+                  <Typography variant="h6" fontWeight="bold" gutterBottom>
+                    {selectedUser.first_name} {selectedUser.middle_name || ''} {selectedUser.last_name}
+                  </Typography>
+                  
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="caption" color="text.secondary" display="block">Email</Typography>
+                    <Typography variant="body2" fontWeight="500" gutterBottom>{selectedUser.email_address}</Typography>
+                    
+                    <Typography variant="caption" color="text.secondary" display="block">Address</Typography>
+                    <Typography variant="body2" fontWeight="500" gutterBottom>{selectedUser.address_street}</Typography>
+                    
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>Current Status</Typography>
+                    <Chip label={selectedUser.account_status} color={getStatusColor(selectedUser.account_status)} sx={{ fontWeight: 'bold', mt: 0.5 }} />
+                  </Box>
+                </Grid>
+
+                {/* Right Side: Secure ID Viewer */}
+                <Grid item xs={12} md={7} sx={{ bgcolor: '#2c3e50', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+                  <Typography variant="overline" color="white" sx={{ mb: 1, opacity: 0.7 }}>Secure ID Vault</Typography>
+                  
+                  {selectedUser.id_proof_image ? (
+                    previewUrl ? (
+                      <Box sx={{ flexGrow: 1, width: '100%', display: 'flex', justifyContent: 'center', overflow: 'hidden', borderRadius: 2 }}>
+                        <img src={previewUrl} alt="ID Proof" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain' }} />
+                      </Box>
+                    ) : (
+                      <CircularProgress color="inherit" sx={{ color: 'white' }} />
+                    )
+                  ) : (
+                    <Typography color="#95a5a6" textAlign="center">
+                      No Identity Document uploaded.<br/>Account should not be activated.
+                    </Typography>
+                  )}
+                </Grid>
+
+              </Grid>
+            </DialogContent>
+            
+            <DialogActions sx={{ p: 2, bgcolor: '#fff' }}>
+              <Button onClick={handleCloseModal} color="inherit" sx={{ mr: 'auto', fontWeight: 'bold' }}>Close</Button>
+              
+              {/* 🛡️ CAPTAIN & SUPER ADMIN ONLY: Block or Set Pending */}
+              {canBlockOrSuspend && (
+                <>
+                  {selectedUser.account_status !== 'Blocked' && (
+                    <Button 
+                      variant="outlined" 
+                      color="error" 
+                      onClick={() => handleUpdateStatus('Blocked')}
+                      disabled={isProcessing}
+                      startIcon={<BlockIcon />}
+                    >
+                      Block Account
+                    </Button>
+                  )}
+
+                  {selectedUser.account_status !== 'Pending' && (
+                    <Button 
+                      variant="outlined" 
+                      color="warning" 
+                      onClick={() => handleUpdateStatus('Pending')}
+                      disabled={isProcessing}
+                      startIcon={<PendingIcon />}
+                    >
+                      Set to Pending
+                    </Button>
+                  )}
+                </>
+              )}
+              
+              {/* 🛡️ ADMIN, SECRETARY, CAPTAIN, SUPER ADMIN: Activate */}
+              {canActivate && selectedUser.account_status !== 'Active' && (
+                <Tooltip 
+                  title={!selectedUser.id_proof_image ? "Account cannot be activated: Missing ID Proof." : ""} 
+                  placement="top"
+                  arrow
+                >
+                  {/* The span is required by MUI to trigger tooltips on disabled elements */}
+                  <span> 
+                    <Button 
+                      variant="contained" 
+                      color="success" 
+                      onClick={() => handleUpdateStatus('Active')}
+                      disabled={!selectedUser.id_proof_image || isProcessing}
+                      startIcon={<VerifiedUserIcon />}
+                      sx={{ fontWeight: 'bold' }}
+                    >
+                      Approve & Activate
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+    </Box>
+  );
+}
