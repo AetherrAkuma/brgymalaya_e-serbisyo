@@ -15,6 +15,7 @@ import RequestsQueue from './pages/admin/RequestsQueue';
 import PaymentsQueue from './pages/admin/PaymentsQueue';
 import ManageResidents from './pages/admin/ManageResidents';
 import Announcements from './pages/admin/ManageAnnouncements';
+import MyProfile from './pages/admin/MyProfile';
 
 // --- TEMPORARY PLACEHOLDER PAGES ---
 // We will replace these with real, styled components in the next steps
@@ -56,7 +57,7 @@ export default function App() {
         <Route path="requests" element={<RequestsQueue />} />
         <Route path="residents" element={<ManageResidents />} />
         <Route path="announcements" element={<Announcements />} />
-        <Route path="profile" element={<h1>Admin Profile Placeholder</h1>} />
+        <Route path="profile" element={<MyProfile />} />
         <Route path="payments" element={<PaymentsQueue />} />      
       </Route>
 

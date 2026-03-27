@@ -14,8 +14,6 @@ import CampaignIcon from '@mui/icons-material/Campaign';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LogoutIcon from '@mui/icons-material/Logout';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
-// NEW: Import the Payments Icon
-import PaymentsIcon from '@mui/icons-material/Payments';
 
 const drawerWidth = 260;
 
@@ -38,19 +36,14 @@ export default function AdminLayout() {
     navigate('/login');
   };
 
-  // --- DYNAMIC NAVIGATION MENU ---
+  // The Admin Navigation Menu
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard' },
-    // Unified Master Queue for Verification and Payment
-    { text: 'Requests & Collection', icon: <AssignmentIcon />, path: '/admin/requests' } 
-  ];
-
-  // Push the remaining global admin items
-  menuItems.push(
+    { text: 'Requests & Collection', icon: <AssignmentIcon />, path: '/admin/requests' },
     { text: 'Manage Residents', icon: <PeopleAltIcon />, path: '/admin/residents' },
     { text: 'Announcements', icon: <CampaignIcon />, path: '/admin/announcements' },
-    { text: 'My Profile', icon: <AccountCircleIcon />, path: '/admin/profile' }
-  );
+    { text: 'My Profile', icon: <AccountCircleIcon />, path: '/admin/profile' },
+  ];
 
   const drawerContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: '#1e1e2d', color: '#a2a3b7' }}>
@@ -74,10 +67,6 @@ export default function AdminLayout() {
       <List sx={{ flexGrow: 1, pt: 3, px: 2 }}>
         {menuItems.map((item) => {
           const isActive = location.pathname.includes(item.path);
-          
-          // Add a special green color scheme if the tab is the Collection Desk
-          const isFinancialTab = item.text === 'Collection Desk';
-
           return (
             <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
               <ListItemButton 
@@ -87,14 +76,10 @@ export default function AdminLayout() {
                 }}
                 sx={{
                   borderRadius: 2,
-                  bgcolor: isActive 
-                    ? (isFinancialTab ? 'success.main' : 'primary.main') 
-                    : 'transparent',
+                  bgcolor: isActive ? 'primary.main' : 'transparent',
                   color: isActive ? 'white' : 'inherit',
                   '&:hover': {
-                    bgcolor: isActive 
-                      ? (isFinancialTab ? 'success.main' : 'primary.main') 
-                      : 'rgba(255,255,255,0.05)',
+                    bgcolor: isActive ? 'primary.main' : 'rgba(255,255,255,0.05)',
                     color: 'white',
                     '& .MuiListItemIcon-root': { color: 'white' }
                   },

@@ -809,23 +809,26 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'S
 });
 
 // Endpoint 24.3: Get Admin Dashboard Statistics
-// Enhanced Endpoint 24.3: Get Admin Dashboard Statistics (Includes Financials)
-app.get('/api/v1/admin/dashboard-stats', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Treasurer', 'Captain']), async (req, res) => {
+// Enhanced Dashboard Stats: Corrected for tbl_Requests and tbl_Payments
+app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
     try {
-        // 1. Get Document Processing Stats
-        const queryRequests = `
+        // 1. Get Request Status Counts from tbl_Requests
+        const [reqStats] = await db.query(`
             SELECT 
                 SUM(CASE WHEN request_status = 'Pending' THEN 1 ELSE 0 END) as pending_count,
                 SUM(CASE WHEN request_status = 'For Payment' THEN 1 ELSE 0 END) as payment_count,
                 SUM(CASE WHEN request_status = 'Processing' THEN 1 ELSE 0 END) as processing_count,
-                SUM(CASE WHEN request_status = 'Ready for Pickup' THEN 1 ELSE 0 END) as ready_count
+                SUM(CASE WHEN request_status = 'Ready for Pickup' THEN 1 ELSE 0 END) as ready_count,
+                COUNT(*) as total_requests
             FROM tbl_Requests
-        `;
-        const [reqStats] = await db.query(queryRequests);
+        `);
 
-        // 2. Get Financial Stats (Total Revenue)
-        const queryFinance = `SELECT SUM(amount_paid) as total_revenue FROM tbl_Payments WHERE payment_status = 'Paid'`;
-        const [finStats] = await db.query(queryFinance);
+        // 2. Get Collection Stats (Handling public funds, not profit)
+        const [finStats] = await db.query(`
+            SELECT SUM(amount_paid) as total_collections 
+            FROM tbl_Payments 
+            WHERE payment_status = 'Paid'
+        `);
 
         res.status(200).json({ 
             status: 'success', 
@@ -834,11 +837,11 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, roleGuard(['Admin', 'Super A
                 forPayment: Number(reqStats[0].payment_count || 0),
                 processing: Number(reqStats[0].processing_count || 0),
                 ready: Number(reqStats[0].ready_count || 0),
-                totalRevenue: Number(finStats[0].total_revenue || 0)
+                totalRequests: Number(reqStats[0].total_requests || 0),
+                totalCollections: Number(finStats[0].total_collections || 0)
             }
         });
     } catch (error) {
-        console.error("[DASHBOARD STATS ERROR]:", error);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
@@ -932,6 +935,40 @@ app.get('/api/v1/residents/me/profile', verifyJWT, roleGuard(['Resident']), asyn
         res.status(200).json({ status: 'success', data: user });
     } catch (error) {
         console.error("PROFILE FETCH ERROR:", error.message);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 42: Get Current Official's Profile
+app.get('/api/v1/admin/profile', verifyJWT, async (req, res) => {
+    try {
+        const [user] = await db.query(
+            'SELECT official_id, full_name, email_official, username, role, account_status FROM tbl_barangayofficials WHERE user_id = ?',
+            [req.user.id]
+        );
+        if (user.length === 0) return res.status(404).json({ error: 'User not found' });
+        res.status(200).json({ status: 'success', data: user[0] });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 43: Update Profile Password
+app.put('/api/v1/admin/profile/password', verifyJWT, async (req, res) => {
+    try {
+        const { current_password, new_password } = req.body;
+        const [user] = await db.query('SELECT password_hash FROM tbl_barangayofficials WHERE user_id = ?', [req.user.id]);
+
+        const hashedCurrent = crypto.createHash('sha256').update(current_password).digest('hex');
+        if (hashedCurrent !== user[0].password_hash) {
+            return res.status(400).json({ error: 'Incorrect current password' });
+        }
+
+        const hashedNew = crypto.createHash('sha256').update(new_password).digest('hex');
+        await db.query('UPDATE tbl_barangayofficials SET password_hash = ? WHERE user_id = ?', [hashedNew, req.user.id]);
+
+        res.status(200).json({ status: 'success', message: 'Password updated successfully' });
+    } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
