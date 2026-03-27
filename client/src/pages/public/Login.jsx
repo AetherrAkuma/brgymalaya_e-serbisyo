@@ -52,11 +52,19 @@ export default function Login() {
         });
         
         // Save token, role, and the newly added first_name
+        // Save token, role, and the newly added first_name
+        const userRole = response.data.role;
         localStorage.setItem('token', response.data.token);
-        localStorage.setItem('role', response.data.role);
-        localStorage.setItem('first_name', response.data.first_name); // ADD THIS
+        localStorage.setItem('role', userRole);
+        localStorage.setItem('first_name', response.data.first_name); 
         
-        navigate('/resident/dashboard');
+        // SMART ROUTING: Send users to their correct portal
+        if (userRole === 'Resident') {
+          navigate('/resident/dashboard');
+        } else {
+          // If they are a Super Admin, Secretary, or Treasurer:
+          navigate('/admin/dashboard');
+        }
 
       } else {
         // --- REGISTRATION LOGIC ---

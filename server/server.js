@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -174,18 +175,21 @@ app.post('/api/v1/auth/resident/register', async (req, res) => {
     }
 });
 
+// Endpoint: Unified Login (Handles both Officials and Residents)
 app.post('/api/v1/auth/login', async (req, res) => {
     try {
         const { email_or_username, password } = req.body;
 
         if (!email_or_username || !password) {
-            // FIX: Changed 'error' to 'message'
-            return res.status(400).json({ status: 'error', message: 'Please provide email/username and password.' });
+            return res.status(400).json({ status: 'error', message: 'Credentials are required.' });
         }
 
-        const hashedPassword = hashPassword(password);
+        // Hash the password using SHA256 (per PDF NFR6)
+        const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
 
-        // 1. Check Officials Table
+        // ---------------------------------------------------------
+        // 1. CHECK BARANGAY OFFICIALS TABLE FIRST
+        // ---------------------------------------------------------
         const [officials] = await db.query(
             'SELECT user_id, full_name, username, role, account_status FROM tbl_BarangayOfficials WHERE (email_official = ? OR username = ?) AND password_hash = ?',
             [email_or_username, email_or_username, hashedPassword]
@@ -193,46 +197,62 @@ app.post('/api/v1/auth/login', async (req, res) => {
 
         if (officials.length > 0) {
             const official = officials[0];
+            
             if (official.account_status !== 'Active') {
                 return res.status(403).json({ status: 'error', message: `Account is ${official.account_status}. Please contact the Super Admin.` });
             }
             
+            // Update last login timestamp
             await db.query('UPDATE tbl_BarangayOfficials SET last_login = NOW() WHERE user_id = ?', [official.user_id]);
+            
+            // Generate Token
             const token = generateToken({ id: official.user_id, role: official.role, username: official.username });
-            return res.status(200).json({ status: 'success', message: 'Official login successful', token, role: official.role });
+            
+            return res.status(200).json({ 
+                status: 'success', 
+                message: 'Official login successful', 
+                token: token, 
+                role: official.role,
+                first_name: official.full_name // We send this so the React dashboard says "Welcome, [Name]"
+            });
         }
 
-        // 2. Check Residents Table
+        // ---------------------------------------------------------
+        // 2. CHECK RESIDENTS TABLE (If not an official)
+        // ---------------------------------------------------------
+        // FIX: Ensuring the variable is strictly named 'residents'
         const [residents] = await db.query(
-            'SELECT resident_id, first_name, last_name, email_address, account_status FROM tbl_Residents WHERE email_address = ? AND password_hash = ?',
+            'SELECT resident_id, first_name, email_address, account_status FROM tbl_Residents WHERE email_address = ? AND password_hash = ?',
             [email_or_username, hashedPassword]
         );
 
         if (residents.length > 0) {
-            const resident = residents[0];
-            // FIX: Standardized the pending and blocked messages
-            if (resident.account_status === 'Pending') {
-                return res.status(403).json({ status: 'error', message: 'Your account is still pending verification by Barangay Officials.' });
-            }
-            if (resident.account_status === 'Blocked') {
-                return res.status(403).json({ status: 'error', message: 'Your account has been blocked. Please visit the Barangay Hall.' });
+            const resident = residents[0]; // The bug was likely right here!
+
+            if (resident.account_status !== 'Active') {
+                return res.status(403).json({ status: 'error', message: `Account is ${resident.account_status}. Please wait for verification.` });
             }
 
-            const token = generateToken({ id: resident.resident_id, role: 'Resident', username: resident.email_address });
+            // Generate Token
+            const token = generateToken({ id: resident.resident_id, role: 'Resident', email: resident.email_address });
+            
             return res.status(200).json({ 
                 status: 'success', 
                 message: 'Resident login successful', 
-                token, 
+                token: token, 
                 role: 'Resident',
                 first_name: resident.first_name 
             });
         }
 
-        // FIX: Standardized the invalid credentials message
+        // ---------------------------------------------------------
+        // 3. NO MATCH FOUND IN EITHER TABLE
+        // ---------------------------------------------------------
         return res.status(401).json({ status: 'error', message: 'Invalid credentials. Please check your username/email and password.' });
 
     } catch (error) {
-        res.status(500).json({ status: 'error', message: error.message });
+        console.error("[LOGIN ERROR]:", error);
+        res.status(500).json({ status: 'error', message: 'Internal server error during login.' });
     }
 });
 
@@ -278,9 +298,9 @@ app.get('/api/v1/public/announcements', async (req, res) => {
 app.get('/api/v1/public/document-types', async (req, res) => {
     try {
         const query = `
-            SELECT doc_type_id, type_name, description, base_fee, requirements, validity_days 
+            SELECT doc_type_id, type_name, description, base_fee, requirements 
             FROM tbl_DocumentTypes 
-            WHERE is_available = TRUE
+            WHERE is_available = 1
         `;
         const [documents] = await db.query(query);
         res.status(200).json({ status: 'success', data: documents });
@@ -486,11 +506,14 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin
 // ==========================================
 
 // Endpoint 21: Submit a Document Request (Resident Only)
-// Endpoint 21: Submit a Document Request (Resident Only)
 // FIX: Added upload.single('id_proof_image') to parse the FormData!
-app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.single('id_proof_image'), async (req, res) => {
+// Endpoint 21: Create Document Request (With Secure Server-Side File Loophole)
+// UPDATE: Changed from upload.single to upload.fields
+app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.fields([
+    { name: 'id_proof_image', maxCount: 1 },
+    { name: 'supporting_docs', maxCount: 5 } // The Loophole Array
+]), async (req, res) => {
     try {
-        // Now req.body will correctly contain the text fields
         const { doc_type_id, purpose } = req.body;
         const resident_id = req.user.id; 
 
@@ -512,42 +535,66 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.single('
             });
         }
 
-        // --- NEW: Securely Handle the ID Proof Upload ---
-        if (req.file && req.file.buffer) {
+        // --- NEW: Generate Reference Number EARLY ---
+        // We need this generated first so we can attach it to the supporting document filenames!
+        const dateString = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const randomStr = Math.floor(1000 + Math.random() * 9000);
+        const reference_no = `REQ-${dateString}-${randomStr}`;
+
+        // --- Handle the ID Proof Upload ---
+        // UPDATE: req.file is now req.files['id_proof_image'][0]
+        if (req.files && req.files['id_proof_image'] && req.files['id_proof_image'][0].buffer) {
+            const idFile = req.files['id_proof_image'][0];
             const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
             
-            // Determine extension
             let ext = '.bin';
-            if (req.file.mimetype === 'image/jpeg') ext = '.jpg';
-            else if (req.file.mimetype === 'image/png') ext = '.png';
-            else if (req.file.mimetype === 'application/pdf') ext = '.pdf';
+            if (idFile.mimetype === 'image/jpeg') ext = '.jpg';
+            else if (idFile.mimetype === 'image/png') ext = '.png';
+            else if (idFile.mimetype === 'application/pdf') ext = '.pdf';
             
             const savedFilename = `idproof_${resident_id}_${uniqueSuffix}${ext}.enc`;
             
-            // Encrypt and save to the vault using your Phase 1.4 utility
-            encryptAndSaveFile(req.file.buffer, savedFilename);
+            // Encrypt and save to the vault
+            encryptAndSaveFile(idFile.buffer, savedFilename);
             
             // Update the resident's profile with their new ID proof
             await db.query('UPDATE tbl_Residents SET id_proof_image = ? WHERE resident_id = ?', [savedFilename, resident_id]);
         }
 
-        // Generate a Unique Reference Number
-        const dateString = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        const randomStr = Math.floor(1000 + Math.random() * 9000);
-        const reference_no = `REQ-${dateString}-${randomStr}`;
+        // --- NEW: Process Supporting Documents (The Loophole) ---
+        if (req.files && req.files['supporting_docs']) {
+            req.files['supporting_docs'].forEach((file, index) => {
+                if (file.buffer) {
+                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+                    
+                    let ext = '.bin';
+                    if (file.mimetype === 'image/jpeg') ext = '.jpg';
+                    else if (file.mimetype === 'image/png') ext = '.png';
+                    else if (file.mimetype === 'application/pdf') ext = '.pdf';
+                    
+                    // CRITICAL: We embed the reference_no right into the filename
+                    const savedSupportName = `support_${reference_no}_${index}_${uniqueSuffix}${ext}.enc`;
+                    
+                    // Encrypt and save using your existing utility!
+                    encryptAndSaveFile(file.buffer, savedSupportName);
+                }
+            });
+            console.log(`[SYSTEM] Saved and encrypted ${req.files['supporting_docs'].length} supporting files for ${reference_no}.`);
+        }
 
-        // Insert the Request
+        // --- Insert the Request ---
+        // This remains 100% compliant with the PDF schema (No supporting_docs column!)
         const insertQuery = `
             INSERT INTO tbl_Requests (resident_id, doc_type_id, reference_no, purpose, request_status)
             VALUES (?, ?, ?, ?, 'Pending')
         `;
-        const result = await db.query(insertQuery, [resident_id, doc_type_id, reference_no, purpose]);
+        const [result] = await db.query(insertQuery, [resident_id, doc_type_id, reference_no, purpose]);
 
         res.status(201).json({ 
             status: 'success', 
             message: 'Document request submitted successfully.',
             reference_no: reference_no,
-            request_id: Number(result.insertId) // FIX: Safely converted BigInt to Number
+            request_id: Number(result.insertId) // Safely converted BigInt to Number
         });
 
     } catch (error) {
@@ -595,8 +642,10 @@ app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Super Ad
     }
 });
 
+
 // Endpoint 24: Initial Verification (Secretary / Super Admin)
-app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+// Upgraded Endpoint 24: Initial Verification (With Audit Logging)
+app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Secretary', 'Super Admin', 'Captain', 'Treasurer']), async (req, res) => {
     try {
         const { action, rejection_reason } = req.body; // action: 'Approve' or 'Reject'
         const { request_id } = req.params;
@@ -606,31 +655,17 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Secretary'
             return res.status(400).json({ error: "Invalid action. Must be 'Approve' or 'Reject'." });
         }
 
-        if (action === 'Reject' && !rejection_reason) {
-            return res.status(400).json({ error: "A rejection_reason is required when rejecting a request." });
-        }
+        // 1. Get current status and reference number for the audit log
+        const [current] = await db.query('SELECT request_status, reference_no, resident_id FROM tbl_Requests WHERE request_id = ?', [request_id]);
+        if (current.length === 0) return res.status(404).json({ error: 'Request not found.' });
 
-        // Get document type info to check the fee
-        const [reqData] = await db.query(`
-            SELECT r.resident_id, dt.base_fee 
-            FROM tbl_Requests r 
-            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id 
-            WHERE r.request_id = ?
-        `, [request_id]);
-
-        if (reqData.length === 0) return res.status(404).json({ error: 'Request not found.' });
-
-        const resident_id = reqData[0].resident_id;
-        const base_fee = parseFloat(reqData[0].base_fee);
+        const oldStatus = current[0].request_status;
+        const refNo = current[0].reference_no;
+        const resident_id = current[0].resident_id;
         
-        let newStatus = '';
-        if (action === 'Reject') {
-            newStatus = 'Rejected';
-        } else if (action === 'Approve') {
-            // All approved requests must route to the Treasurer for transaction logging, even if free
-            newStatus = 'For Payment'; 
-        }
+        let newStatus = action === 'Reject' ? 'Rejected' : 'For Payment';
 
+        // 2. Update the database
         const updateQuery = `
             UPDATE tbl_Requests 
             SET request_status = ?, rejection_reason = ?, processed_by = ?
@@ -639,19 +674,101 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Secretary'
         const [result] = await db.query(updateQuery, [newStatus, rejection_reason || null, official_id, request_id]);
 
         if (result.affectedRows === 0) {
-            return res.status(400).json({ error: 'Request is either already processed or does not exist.' });
+            return res.status(400).json({ error: 'Request is already processed or does not exist.' });
         }
 
-        // Email Hook Simulation (5.4)
-        console.log(`[EMAIL SIMULATION] Sent to Resident ID ${resident_id}: Your request status is now ${newStatus}.`);
+        // 3. Log the change to the Audit Trail (Phase 8 Requirement)
+        await logStatusChange(official_id, request_id, oldStatus, newStatus, `Admin ${action}ed request ${refNo}`);
+
+        // Email Hook Simulation (FR14)
+        console.log(`[EMAIL SIMULATION] Sent to Resident ID ${resident_id}: Your request ${refNo} is now ${newStatus}.`);
 
         res.status(200).json({ 
             status: 'success', 
-            message: `Request successfully marked as ${newStatus}.`,
-            routed_to: newStatus
+            message: `Request successfully marked as ${newStatus}.`
         });
 
     } catch (error) {
+        console.error("[VERIFICATION ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 24.3: Get Admin Dashboard Statistics
+// Enhanced Endpoint 24.3: Get Admin Dashboard Statistics (Includes Financials)
+app.get('/api/v1/admin/dashboard-stats', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Treasurer', 'Captain']), async (req, res) => {
+    try {
+        // 1. Get Document Processing Stats
+        const queryRequests = `
+            SELECT 
+                SUM(CASE WHEN request_status = 'Pending' THEN 1 ELSE 0 END) as pending_count,
+                SUM(CASE WHEN request_status = 'For Payment' THEN 1 ELSE 0 END) as payment_count,
+                SUM(CASE WHEN request_status = 'Processing' THEN 1 ELSE 0 END) as processing_count,
+                SUM(CASE WHEN request_status = 'Ready for Pickup' THEN 1 ELSE 0 END) as ready_count
+            FROM tbl_Requests
+        `;
+        const [reqStats] = await db.query(queryRequests);
+
+        // 2. Get Financial Stats (Total Revenue)
+        const queryFinance = `SELECT SUM(amount_paid) as total_revenue FROM tbl_Payments WHERE payment_status = 'Paid'`;
+        const [finStats] = await db.query(queryFinance);
+
+        res.status(200).json({ 
+            status: 'success', 
+            data: {
+                pending: Number(reqStats[0].pending_count || 0),
+                forPayment: Number(reqStats[0].payment_count || 0),
+                processing: Number(reqStats[0].processing_count || 0),
+                ready: Number(reqStats[0].ready_count || 0),
+                totalRevenue: Number(finStats[0].total_revenue || 0)
+            }
+        });
+    } catch (error) {
+        console.error("[DASHBOARD STATS ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 29: Process Payment (Treasurer/Admin Only)
+app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Treasurer', 'Super Admin', 'Captain']), async (req, res) => {
+    try {
+        const { request_id } = req.params;
+        const { or_number, amount_paid } = req.body;
+        const treasurer_id = req.user.id;
+
+        if (!or_number || !amount_paid) {
+            return res.status(400).json({ status: 'error', message: 'OR Number and Amount Paid are required.' });
+        }
+
+        // 1. Verify the request is actually waiting for payment
+        const [request] = await db.query(
+            'SELECT reference_no, request_status FROM tbl_Requests WHERE request_id = ?', 
+            [request_id]
+        );
+
+        if (request.length === 0) return res.status(404).json({ error: 'Request not found.' });
+        if (request[0].request_status !== 'For Payment') {
+            return res.status(400).json({ error: 'Request is not in the payment stage.' });
+        }
+
+        // 2. Update status to 'Processing' (Ready for PDF Generation)
+        const updateQuery = `
+            UPDATE tbl_Requests 
+            SET request_status = 'Processing', processed_by = ? 
+            WHERE request_id = ?
+        `;
+        await db.query(updateQuery, [treasurer_id, request_id]);
+
+        // 3. Log the Financial Transaction to the Audit Trail (Phase 8)
+        await logPayment(treasurer_id, request_id, amount_paid, or_number, `Payment received for ${request[0].reference_no}`);
+
+        res.status(200).json({ 
+            status: 'success', 
+            message: 'Payment recorded. Request is now in the processing queue.' 
+        });
+
+    } catch (error) {
+        console.error("[PAYMENT ERROR]:", error);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
@@ -724,6 +841,75 @@ app.get('/api/v1/payments/queue', verifyJWT, roleGuard(['Treasurer', 'Super Admi
         res.status(200).json({ status: 'success', data: paymentQueue });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 25.5: Get All Requests for Admin Queue
+app.get('/api/v1/admin/requests', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                r.request_id, r.reference_no, r.purpose, r.request_status, r.date_requested,
+                dt.type_name, dt.base_fee,
+                res.first_name, res.last_name, res.id_proof_image, res.address_street
+            FROM tbl_Requests r
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            ORDER BY 
+                CASE r.request_status 
+                    WHEN 'Pending' THEN 1 
+                    WHEN 'For Clearance' THEN 2 
+                    WHEN 'Processing' THEN 3
+                    WHEN 'Ready for Pickup' THEN 4
+                    ELSE 5 
+                END,
+                r.date_requested ASC
+        `;
+
+        const [requests] = await db.query(query);
+        res.status(200).json({ status: 'success', data: requests });
+    } catch (error) {
+        console.error("[ADMIN REQUESTS ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 26.3: Decrypt and Stream Files for Admin Viewing (FIXED)
+app.get('/api/v1/admin/view-file/:filename', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+    try {
+        const { filename } = req.params;
+        
+        // Use the utility function correctly by passing just the filename
+        const decryptedBuffer = decryptFileBuffer(filename); 
+
+        let contentType = 'application/octet-stream';
+        if (filename.toLowerCase().includes('.jpg') || filename.toLowerCase().includes('.jpeg')) contentType = 'image/jpeg';
+        else if (filename.toLowerCase().includes('.png')) contentType = 'image/png';
+        else if (filename.toLowerCase().includes('.pdf')) contentType = 'application/pdf';
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', 'inline'); 
+        res.send(decryptedBuffer);
+
+    } catch (error) {
+        console.error("[FILE VIEW ERROR]:", error);
+        res.status(404).json({ status: 'error', message: 'File not found or decryption failed.' });
+    }
+});
+
+// Endpoint 26.4: List Supporting Files for a Specific Reference No
+app.get('/api/v1/admin/request-files/:refNo', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Captain']), async (req, res) => {
+    try {
+        const { refNo } = req.params;
+        const uploadDir = path.join(__dirname, 'uploads');
+        
+        // Scan the directory for files matching 'support_REQ-XXXXXX'
+        const files = fs.readdirSync(uploadDir);
+        const matchingFiles = files.filter(f => f.includes(`support_${refNo}`));
+
+        res.status(200).json({ status: 'success', files: matchingFiles });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: 'Error scanning files.' });
     }
 });
 
@@ -814,6 +1000,42 @@ app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer
         res.status(201).json({ status: 'success', message: 'Document marked as Exempted/Free. Request is now Processing.' });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 28: Update Request Status (Approve/Reject)
+app.put('/api/v1/admin/requests/:id/status', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { new_status, rejection_reason } = req.body;
+        const adminId = req.user.id;
+
+        // 1. Get current status for the audit log
+        const [current] = await db.query('SELECT request_status, reference_no FROM tbl_Requests WHERE request_id = ?', [id]);
+        if (current.length === 0) return res.status(404).json({ status: 'error', message: 'Request not found.' });
+
+        const oldStatus = current[0].request_status;
+        const refNo = current[0].reference_no;
+
+        // 2. Update the status and rejection reason (if any)
+        const updateQuery = `
+            UPDATE tbl_Requests 
+            SET request_status = ?, rejection_reason = ?, processed_by = ? 
+            WHERE request_id = ?
+        `;
+        await db.query(updateQuery, [new_status, rejection_reason || null, adminId, id]);
+
+        // 3. Log the change to the Audit Trail
+        await logStatusChange(adminId, id, oldStatus, new_status, `Admin ${new_status} request ${refNo}`);
+
+        res.status(200).json({ 
+            status: 'success', 
+            message: `Request ${new_status === 'Rejected' ? 'rejected' : 'verified'} successfully.` 
+        });
+
+    } catch (error) {
+        console.error("[STATUS UPDATE ERROR]:", error);
+        res.status(500).json({ status: 'error', message: 'Failed to update request status.' });
     }
 });
 

@@ -10,15 +10,23 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
+import LockPersonOutlinedIcon from '@mui/icons-material/LockPersonOutlined';
 
 import api from '../../utils/axios';
 
-const steps = ['Select Service', 'Upload Requirements', 'Review & Submit'];
+// NEW: 4-Step Pipeline
+const steps = ['Select Document', 'Verify Identity', 'Required Documents', 'Review & Submit'];
 
 export default function RequestWizard() {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   
+  // File States
+  const [selectedFile, setSelectedFile] = useState(null); // Primary ID
+  const [supportingFiles, setSupportingFiles] = useState([]); // Now strictly REQUIRED
+
   // Data States
   const [availableDocs, setAvailableDocs] = useState([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
@@ -27,7 +35,6 @@ export default function RequestWizard() {
 
   // Form State
   const [formData, setFormData] = useState({ doc_type_id: '', purpose: '' });
-  const [selectedFile, setSelectedFile] = useState(null);
 
   useEffect(() => {
     const fetchDocs = async () => {
@@ -50,8 +57,12 @@ export default function RequestWizard() {
     if (e.target.files && e.target.files[0]) setSelectedFile(e.target.files[0]);
   };
 
-  const removeFile = () => {
-    setSelectedFile(null);
+  const removeFile = () => setSelectedFile(null);
+
+  const handleSupportingFilesChange = (e) => {
+    if (e.target.files) {
+      setSupportingFiles(Array.from(e.target.files));
+    }
   };
 
   const handleSubmit = async () => {
@@ -61,7 +72,12 @@ export default function RequestWizard() {
       const payload = new FormData();
       payload.append('doc_type_id', formData.doc_type_id);
       payload.append('purpose', formData.purpose);
+      
       if (selectedFile) payload.append('id_proof_image', selectedFile);
+
+      supportingFiles.forEach((file) => {
+        payload.append('supporting_docs', file);
+      });
 
       await api.post('/requests', payload, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -73,15 +89,17 @@ export default function RequestWizard() {
     }
   };
 
-  // --- MODERNIZED STEP VIEWS ---
-
-  // STEP 1: Card-Based Selection
+  // --- STEP 1: DOCUMENT SELECTION ---
   const renderStep1 = () => (
-    <Box sx={{ animation: 'fadeIn 0.5s' }}>
-      <Typography variant="h6" fontWeight="600" gutterBottom>What document do you need?</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Select the specific barangay document you are requesting.
-      </Typography>
+    <Box sx={{ animation: 'fadeIn 0.4s ease-in-out' }}>
+      <Box sx={{ mb: 4, textAlign: 'center' }}>
+        <Typography variant="h5" fontWeight="700" color="text.primary" gutterBottom>
+          What do you need today?
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Select the document you wish to request and provide a brief reason.
+        </Typography>
+      </Box>
 
       <Grid container spacing={2} sx={{ mb: 4 }}>
         {loadingDocs ? (
@@ -92,26 +110,28 @@ export default function RequestWizard() {
             return (
               <Grid item xs={12} sm={6} key={doc.doc_type_id}>
                 <Card 
-                  elevation={isSelected ? 4 : 1}
+                  elevation={isSelected ? 3 : 0}
                   sx={{ 
-                    border: isSelected ? '2px solid' : '1px solid',
+                    border: '2px solid',
                     borderColor: isSelected ? 'primary.main' : 'divider',
                     bgcolor: isSelected ? 'primary.50' : 'background.paper',
-                    transition: 'all 0.2s ease-in-out',
-                    height: '100%'
+                    transition: 'all 0.2s ease',
+                    height: '100%',
+                    borderRadius: 3,
+                    '&:hover': { borderColor: isSelected ? 'primary.main' : 'primary.light', bgcolor: isSelected ? 'primary.50' : '#f9f9f9' }
                   }}
                 >
                   <CardActionArea onClick={() => setFormData({ ...formData, doc_type_id: doc.doc_type_id })} sx={{ height: '100%', p: 1 }}>
                     <CardContent>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                        <InsertDriveFileOutlinedIcon color={isSelected ? "primary" : "action"} />
-                        {isSelected && <CheckCircleIcon color="primary" fontSize="small" />}
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                        <InsertDriveFileOutlinedIcon color={isSelected ? "primary" : "action"} fontSize="large" />
+                        {isSelected && <CheckCircleIcon color="primary" />}
                       </Box>
-                      <Typography variant="subtitle1" fontWeight="bold" sx={{ color: isSelected ? 'primary.main' : 'text.primary' }}>
+                      <Typography variant="subtitle1" fontWeight="700" sx={{ color: isSelected ? 'primary.dark' : 'text.primary', mb: 0.5 }}>
                         {doc.type_name}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1, minHeight: 40 }}>
-                        Fee: ₱{doc.base_fee}
+                      <Typography variant="body2" color="text.secondary" sx={{ minHeight: 40, display: 'flex', alignItems: 'center' }}>
+                        Processing Fee: <strong style={{ marginLeft: '4px', color: '#333' }}>₱{doc.base_fee}</strong>
                       </Typography>
                     </CardContent>
                   </CardActionArea>
@@ -122,134 +142,221 @@ export default function RequestWizard() {
         )}
       </Grid>
 
+      <Divider sx={{ my: 4 }} />
+
+      <Typography variant="subtitle1" fontWeight="600" gutterBottom>
+        Purpose of Request
+      </Typography>
       <TextField
         fullWidth
         required
         multiline
         rows={3}
-        label="Purpose of Request"
-        placeholder="Briefly explain why you need this document..."
+        placeholder="e.g., For employment application, school enrollment, bank opening..."
         value={formData.purpose}
         onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
         variant="outlined"
-        sx={{ bgcolor: '#fafafa' }}
+        helperText="Please be specific so the barangay can process your request faster."
+        sx={{ bgcolor: '#fafafa', '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
       />
     </Box>
   );
 
-  // STEP 2: Modern Dropzone Styling
+  // --- STEP 2: ID VERIFICATION (THE GATEWAY) ---
   const renderStep2 = () => (
-    <Box sx={{ textAlign: 'center', py: 4, animation: 'fadeIn 0.5s' }}>
-      <Typography variant="h6" fontWeight="600" gutterBottom>Verify Your Identity</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 4, px: { xs: 2, md: 8 } }}>
-        To prevent fraud, please attach a clear photo of your Valid Government ID or Barangay ID.
+    <Box sx={{ py: 2, animation: 'fadeIn 0.4s ease-in-out', textAlign: 'center' }}>
+      <LockPersonOutlinedIcon color="primary" sx={{ fontSize: 50, mb: 2 }} />
+      <Typography variant="h5" fontWeight="700" gutterBottom>Verify Your Identity</Typography>
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 4, maxWidth: 600, mx: 'auto' }}>
+        To prevent fraud and protect your records, you <b>must</b> upload a clear photo of your Valid Government ID or Barangay ID before proceeding.
       </Typography>
       
-      {!selectedFile ? (
-        <Button
-          component="label"
-          sx={{ 
-            width: '100%', 
-            maxWidth: 500, 
-            height: 200, 
-            border: '2px dashed', 
-            borderColor: 'primary.light', 
-            borderRadius: 4,
-            bgcolor: 'rgba(25, 118, 210, 0.02)',
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            color: 'text.secondary',
-            '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.05)', borderColor: 'primary.main' }
-          }}
-        >
-          <CloudUploadOutlinedIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-          <Typography variant="h6" color="primary">Click to browse files</Typography>
-          <Typography variant="caption">Supports JPG, PNG, PDF (Max 5MB)</Typography>
-          <input type="file" hidden accept="image/jpeg, image/png, application/pdf" onChange={handleFileChange} />
-        </Button>
-      ) : (
-        <Paper elevation={0} sx={{ p: 3, border: '1px solid', borderColor: 'success.main', bgcolor: '#f1f8e9', borderRadius: 3, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-          <CheckCircleIcon color="success" sx={{ fontSize: 40 }} />
-          <Box sx={{ textAlign: 'left' }}>
-            <Typography variant="subtitle2" fontWeight="bold">{selectedFile.name}</Typography>
-            <Typography variant="caption" color="text.secondary">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</Typography>
-          </Box>
-          <Button color="error" size="small" onClick={removeFile} sx={{ minWidth: 'auto', p: 1, ml: 2 }}>
-            <DeleteOutlineIcon />
+      <Box sx={{ maxWidth: 500, mx: 'auto' }}>
+        {!selectedFile ? (
+          <Button
+            component="label"
+            sx={{ 
+              width: '100%', height: 180, border: '2px dashed', borderColor: 'primary.main', 
+              borderRadius: 3, bgcolor: 'primary.50', display: 'flex', flexDirection: 'column', 
+              alignItems: 'center', justifyContent: 'center', color: 'primary.dark',
+              '&:hover': { bgcolor: 'primary.100' }
+            }}
+          >
+            <CloudUploadOutlinedIcon sx={{ fontSize: 48, mb: 1 }} />
+            <Typography variant="subtitle1" fontWeight="bold">Click to Upload Official ID</Typography>
+            <Typography variant="caption">JPG, PNG, PDF (Max 5MB)</Typography>
+            <input type="file" hidden accept="image/jpeg, image/png, application/pdf" onChange={handleFileChange} />
           </Button>
-        </Paper>
-      )}
+        ) : (
+          <Paper elevation={0} sx={{ p: 3, border: '2px solid', borderColor: 'success.main', bgcolor: 'success.50', borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <CheckCircleIcon color="success" fontSize="large" />
+              <Box sx={{ textAlign: 'left' }}>
+                <Typography variant="subtitle1" fontWeight="bold" color="success.dark">ID Attached Successfully</Typography>
+                <Typography variant="caption" color="text.secondary">{selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</Typography>
+              </Box>
+            </Box>
+            <Button color="error" variant="outlined" size="small" onClick={removeFile} sx={{ minWidth: 'auto', p: 1, borderRadius: 2 }}>
+              <DeleteOutlineIcon /> Remove
+            </Button>
+          </Paper>
+        )}
+      </Box>
     </Box>
   );
 
-  // STEP 3: Clean Summary Receipt
+  // --- STEP 3: REQUIRED DOCUMENTS ---
   const renderStep3 = () => {
     const selectedDocInfo = availableDocs.find(d => d.doc_type_id === formData.doc_type_id);
+    const dynamicRequirements = selectedDocInfo?.requirements 
+      ? selectedDocInfo.requirements 
+      : "Please upload the necessary supporting files to process your request.";
+
     return (
-      <Box sx={{ animation: 'fadeIn 0.5s' }}>
-        <Typography variant="h6" fontWeight="600" gutterBottom>Final Review</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Please confirm your details before submitting to the Barangay Office.
+      <Box sx={{ py: 2, animation: 'fadeIn 0.4s ease-in-out' }}>
+        <Typography variant="h5" fontWeight="700" gutterBottom textAlign="center">Required Documents</Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }} textAlign="center">
+          You must upload the documents listed below to complete your application.
         </Typography>
 
-        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 3, overflow: 'hidden' }}>
-          <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-            <Typography variant="subtitle2" color="text.secondary" textTransform="uppercase">Transaction Summary</Typography>
+        <Alert 
+          severity="info" 
+          icon={<InfoOutlinedIcon fontSize="inherit" />}
+          sx={{ mb: 4, borderRadius: 2, border: '1px solid', borderColor: 'info.light' }}
+        >
+          <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+            Specific Requirements for {selectedDocInfo?.type_name}:
+          </Typography>
+          <Typography variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+            {dynamicRequirements}
+          </Typography>
+        </Alert>
+
+        <Box sx={{ maxWidth: 600, mx: 'auto', textAlign: 'center' }}>
+          <Button variant="outlined" component="label" size="large" sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold', mb: 3 }}>
+            + Upload Required Files
+            <input type="file" hidden multiple accept="image/jpeg, image/png, application/pdf" onChange={handleSupportingFilesChange} />
+          </Button>
+
+          {supportingFiles.length > 0 ? (
+            <Box sx={{ p: 2, bgcolor: '#fafafa', borderRadius: 2, border: '1px solid', borderColor: 'divider', textAlign: 'left' }}>
+              <Typography variant="caption" fontWeight="bold" color="text.secondary" textTransform="uppercase" display="block" gutterBottom>
+                Attached Requirements ({supportingFiles.length} files):
+              </Typography>
+              {supportingFiles.map((file, index) => (
+                <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1, py: 0.5 }}>
+                  <CheckCircleIcon color="primary" fontSize="small" />
+                  <Typography variant="body2" color="text.primary" fontWeight="500">
+                    {file.name}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="error" sx={{ mt: 2, fontStyle: 'italic' }}>
+              * You must attach at least one file to proceed.
+            </Typography>
+          )}
+        </Box>
+      </Box>
+    );
+  };
+
+  // --- STEP 4: FINAL REVIEW ---
+  const renderStep4 = () => {
+    const selectedDocInfo = availableDocs.find(d => d.doc_type_id === formData.doc_type_id);
+    return (
+      <Box sx={{ animation: 'fadeIn 0.4s ease-in-out' }}>
+        <Box sx={{ textAlign: 'center', mb: 4 }}>
+          <ReceiptLongOutlinedIcon color="primary" sx={{ fontSize: 48, mb: 1 }} />
+          <Typography variant="h5" fontWeight="700" gutterBottom>Final Review</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Please ensure all details are correct. Documents are processed based on this information.
+          </Typography>
+        </Box>
+
+        <Paper elevation={2} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+          <Box sx={{ bgcolor: 'primary.main', p: 2, color: 'white' }}>
+            <Typography variant="subtitle1" fontWeight="bold">Transaction Summary</Typography>
           </Box>
-          <Box sx={{ p: 3 }}>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={4}><Typography color="text.secondary">Requested Document</Typography></Grid>
-              <Grid item xs={12} sm={8}><Typography fontWeight="bold" color="primary.main">{selectedDocInfo?.type_name}</Typography></Grid>
+          
+          <Box sx={{ p: { xs: 2, md: 4 } }}>
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={4}><Typography color="text.secondary" variant="body2">Requested Service</Typography></Grid>
+              <Grid item xs={12} sm={8}><Typography fontWeight="bold" variant="body1">{selectedDocInfo?.type_name}</Typography></Grid>
               
-              <Grid item xs={12} sm={4}><Typography color="text.secondary">Stated Purpose</Typography></Grid>
-              <Grid item xs={12} sm={8}><Typography variant="body2">{formData.purpose}</Typography></Grid>
+              <Grid item xs={12} sm={4}><Typography color="text.secondary" variant="body2">Stated Purpose</Typography></Grid>
+              <Grid item xs={12} sm={8}>
+                <Paper elevation={0} sx={{ p: 1.5, bgcolor: '#f5f5f5', borderRadius: 2 }}>
+                  <Typography variant="body2">{formData.purpose}</Typography>
+                </Paper>
+              </Grid>
               
-              <Grid item xs={12} sm={4}><Typography color="text.secondary">Attached Identity Proof</Typography></Grid>
-              <Grid item xs={12} sm={8}><Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <CheckCircleIcon color="success" fontSize="small" /> {selectedFile?.name}
-              </Typography></Grid>
+              <Grid item xs={12} sm={4}><Typography color="text.secondary" variant="body2">Identity Proof</Typography></Grid>
+              <Grid item xs={12} sm={8}>
+                <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'success.main', fontWeight: 'bold' }}>
+                  <CheckCircleIcon fontSize="small" /> {selectedFile?.name}
+                </Typography>
+              </Grid>
+
+              {supportingFiles.length > 0 && (
+                <>
+                  <Grid item xs={12} sm={4}><Typography color="text.secondary" variant="body2">Required Docs</Typography></Grid>
+                  <Grid item xs={12} sm={8}>
+                    {supportingFiles.map((file, idx) => (
+                      <Typography key={idx} variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, color: 'success.main' }}>
+                        <CheckCircleIcon fontSize="small" /> {file.name}
+                      </Typography>
+                    ))}
+                  </Grid>
+                </>
+              )}
             </Grid>
           </Box>
+          
           <Divider />
-          <Box sx={{ bgcolor: 'primary.main', color: 'white', p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">Total Fee Due Upon Pickup</Typography>
-            <Typography variant="h5" fontWeight="bold">₱{selectedDocInfo?.base_fee}</Typography>
+          
+          <Box sx={{ bgcolor: '#fafafa', p: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="subtitle1" color="text.secondary">Total Fee (Payable at Hall)</Typography>
+            <Typography variant="h5" fontWeight="800" color="primary.main">₱{selectedDocInfo?.base_fee}</Typography>
           </Box>
         </Paper>
+        
         {submitError && <Alert severity="error" sx={{ mt: 3, borderRadius: 2 }}>{submitError}</Alert>}
       </Box>
     );
   };
 
+  // --- THE GATEKEEPER LOGIC ---
   const isNextDisabled = () => {
-    if (activeStep === 0) return !formData.doc_type_id || !formData.purpose.trim();
-    if (activeStep === 1) return !selectedFile;
+    if (activeStep === 0) return !formData.doc_type_id || !formData.purpose.trim(); // Must select doc & purpose
+    if (activeStep === 1) return !selectedFile; // GATEWAY: Must upload ID
+    if (activeStep === 2) return supportingFiles.length === 0; // STRICT REQUIREMENT: Must upload at least 1 file
     return false;
   };
 
   return (
-    <Box sx={{ maxWidth: 800, mx: 'auto', mt: { xs: 2, md: 4 } }}>
-      <Typography variant="h4" fontWeight="bold" gutterBottom color="text.primary">
-        New Document Request
+    <Box sx={{ maxWidth: 850, mx: 'auto', mt: { xs: 2, md: 4 }, mb: 8 }}>
+      <Typography variant="h4" fontWeight="800" gutterBottom color="text.primary" sx={{ px: 2 }}>
+        Request a Document
       </Typography>
       
-      <Paper elevation={3} sx={{ p: { xs: 3, md: 5 }, borderRadius: 4, mt: 4 }}>
+      <Paper elevation={0} sx={{ p: { xs: 2, md: 5 }, borderRadius: 4, mt: 3, border: '1px solid', borderColor: 'divider' }}>
         <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 6 }}>
           {steps.map((label) => (
             <Step key={label}>
               <StepLabel StepIconProps={{ sx: { '&.Mui-active': { color: 'primary.main' }, '&.Mui-completed': { color: 'success.main' } } }}>
-                <Typography fontWeight={activeStep >= steps.indexOf(label) ? 'bold' : 'normal'}>{label}</Typography>
+                <Typography fontWeight={activeStep >= steps.indexOf(label) ? 'bold' : 'medium'}>{label}</Typography>
               </StepLabel>
             </Step>
           ))}
         </Stepper>
 
-        <Box sx={{ minHeight: 300 }}>
+        <Box sx={{ minHeight: 350 }}>
           {activeStep === 0 && renderStep1()}
           {activeStep === 1 && renderStep2()}
           {activeStep === 2 && renderStep3()}
+          {activeStep === 3 && renderStep4()}
         </Box>
 
         <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 6, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
@@ -258,9 +365,9 @@ export default function RequestWizard() {
             onClick={handleBack} 
             variant="text" 
             color="inherit"
-            sx={{ fontWeight: 'bold' }}
+            sx={{ fontWeight: 'bold', textTransform: 'none' }}
           >
-            Go Back
+            ← Back
           </Button>
           
           {activeStep === steps.length - 1 ? (
@@ -271,9 +378,9 @@ export default function RequestWizard() {
               onClick={handleSubmit} 
               disabled={isSubmitting}
               startIcon={isSubmitting && <CircularProgress size={20} color="inherit" />}
-              sx={{ px: 4, borderRadius: 8, fontWeight: 'bold' }}
+              sx={{ px: 5, borderRadius: 8, fontWeight: 'bold', textTransform: 'none' }}
             >
-              {isSubmitting ? 'Processing...' : 'Submit Final Request'}
+              {isSubmitting ? 'Processing...' : 'Submit Request'}
             </Button>
           ) : (
             <Button 
@@ -281,9 +388,9 @@ export default function RequestWizard() {
               size="large"
               onClick={handleNext} 
               disabled={isNextDisabled()}
-              sx={{ px: 4, borderRadius: 8, fontWeight: 'bold' }}
+              sx={{ px: 5, borderRadius: 8, fontWeight: 'bold', textTransform: 'none' }}
             >
-              Continue to Next Step
+              Continue →
             </Button>
           )}
         </Box>
@@ -291,7 +398,7 @@ export default function RequestWizard() {
 
       <style>{`
         @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
+          from { opacity: 0; transform: translateY(15px); }
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>

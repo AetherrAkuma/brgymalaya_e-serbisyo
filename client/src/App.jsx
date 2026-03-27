@@ -10,14 +10,14 @@ import ResidentDashboard from './pages/resident/Dashboard';
 import RequestWizard from './pages/resident/RequestWizard';
 import MyRequests from './pages/resident/MyRequests';
 import Profile from './pages/resident/Profile';
+import AdminDashboard from './pages/admin/Dashboard';
+import RequestsQueue from './pages/admin/RequestsQueue';
+import PaymentsQueue from './pages/admin/PaymentsQueue';
 
 // --- TEMPORARY PLACEHOLDER PAGES ---
 // We will replace these with real, styled components in the next steps
 const VerifyQR = () => <h1>QR Document Verification Scanner</h1>;
-const ResidentRequests = () => <h1>My Document Requests</h1>;
 
-const AdminDashboard = () => <h1>Admin Operational Dashboard</h1>;
-const AdminQueue = () => <h1>Document Requests Queue</h1>;
 
 export default function App() {
   return (
@@ -48,12 +48,15 @@ export default function App() {
         {/* ============================== */}
         {/* 3. ADMIN PROTECTED ROUTES      */}
         {/* ============================== */}
-        <Route path="/admin" element={<AdminLayout />}>
-          {/* Automatically redirect /admin to /admin/dashboard */}
-          <Route index element={<Navigate to="dashboard" replace />} />
-          <Route path="dashboard" element={<AdminDashboard />} />
-          <Route path="queue" element={<AdminQueue />} />
-        </Route>
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<AdminDashboard />} />
+        <Route path="dashboard" element={<AdminDashboard />} />
+        <Route path="requests" element={<RequestsQueue />} />
+        <Route path="residents" element={<h1>Manage Residents Placeholder</h1>} />
+        <Route path="announcements" element={<h1>Announcements Placeholder</h1>} />
+        <Route path="profile" element={<h1>Admin Profile Placeholder</h1>} />
+        <Route path="payments" element={<PaymentsQueue />} />      
+      </Route>
 
         {/* Catch-All 404 Route */}
         <Route path="*" element={<h1>404 - Page Not Found</h1>} />
