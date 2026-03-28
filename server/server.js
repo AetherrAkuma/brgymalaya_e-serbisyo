@@ -282,15 +282,16 @@ app.post('/api/v1/setup/superadmin', async (req, res) => {
 app.get('/api/v1/public/announcements', async (req, res) => {
     try {
         const query = `
-            SELECT announcement_id, title, content_body, image_path, target_audience, is_pinned, date_posted
-            FROM tbl_Announcements 
-            WHERE status = 'Published' 
+            SELECT announcement_id, title, content_body, image_path, target_audience, is_pinned, date_posted, status
+            FROM tbl_announcements 
+            WHERE (LOWER(status) = 'published' OR LOWER(status) = 'active') 
               AND (expiry_date IS NULL OR expiry_date > NOW())
             ORDER BY is_pinned DESC, date_posted DESC
         `;
         const [announcements] = await db.query(query);
         res.status(200).json({ status: 'success', data: announcements });
     } catch (error) {
+        console.error("[PUBLIC ANNOUNCEMENT FETCH ERROR]:", error);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
