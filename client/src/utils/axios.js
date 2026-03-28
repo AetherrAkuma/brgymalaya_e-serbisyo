@@ -1,9 +1,7 @@
 import axios from 'axios';
 
-// Create a configured instance of Axios
 const api = axios.create({
-    // FIX: Read the URL from the .env file using Vite's syntax
-    baseURL: import.meta.env.VITE_API_BASE_URL, 
+    baseURL: import.meta.env.VITE_API_BASE_URL, // This is the crucial line
     headers: {
         'Content-Type': 'application/json'
     }
