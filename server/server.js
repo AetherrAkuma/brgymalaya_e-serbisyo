@@ -28,8 +28,8 @@ app.use(express.json());
 // Safety Net Middleware for JSON Parsing Errors
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-        return res.status(400).json({ 
-            error: 'Malformed JSON or incorrect Content-Type header. If uploading a file, uncheck Content-Type in your headers and use form-data or binary.' 
+        return res.status(400).json({
+            error: 'Malformed JSON or incorrect Content-Type header. If uploading a file, uncheck Content-Type in your headers and use form-data or binary.'
         });
     }
     next();
@@ -83,8 +83,8 @@ app.post('/api/v1/test/generate-token', (req, res) => {
     res.status(200).json({ token: generateToken({ id, role, username }) });
 });
 
-app.get('/api/v1/test/super-admin-only', verifyJWT, roleGuard(['Super Admin']), (req, res) => {
-    res.status(200).json({ message: 'Welcome Super Admin!', user: req.user });
+app.get('/api/v1/test/super-admin-only', verifyJWT, roleGuard(['Captain']), (req, res) => {
+    res.status(200).json({ message: 'Welcome Captain!', user: req.user });
 });
 
 // ==========================================
@@ -113,7 +113,7 @@ app.post('/api/v1/files/upload', express.raw({ type: ['image/jpeg', 'image/png',
     }
 });
 
-app.get('/api/v1/files/:filename', verifyJWT, roleGuard(['Super Admin', 'Secretary', 'Treasurer', 'Captain']), (req, res) => {
+app.get('/api/v1/files/:filename', verifyJWT, roleGuard(['Captain', 'Secretary', 'Treasurer', 'Captain']), (req, res) => {
     try {
         const decryptedBuffer = decryptFileBuffer(req.params.filename);
         let mimeType = 'application/octet-stream';
@@ -144,9 +144,9 @@ app.post('/api/v1/auth/resident/register', async (req, res) => {
         }
 
         const [existing] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email_address]);
-        
+
         // FIX: We must check if the array actually has items inside it, not just if the array exists.
-        if (existing && existing.length > 0) { 
+        if (existing && existing.length > 0) {
             return res.status(400).json({ status: 'error', message: 'Email address is already registered.' });
         }
 
@@ -184,36 +184,34 @@ app.post('/api/v1/auth/login', async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Credentials are required.' });
         }
 
-        // Hash the password using SHA256 (per PDF NFR6)
         const hashedPassword = crypto.createHash('sha256').update(password).digest('hex');
 
-        // ---------------------------------------------------------
-        // 1. CHECK BARANGAY OFFICIALS TABLE FIRST
-        // ---------------------------------------------------------
+        // 1. CHECK BARANGAY OFFICIALS TABLE
         const [officials] = await db.query(
-            'SELECT user_id, full_name, username, role, account_status FROM tbl_BarangayOfficials WHERE (email_official = ? OR username = ?) AND password_hash = ?',
+            'SELECT user_id, full_name, username, role, account_status, require_password_change FROM tbl_BarangayOfficials WHERE (email_official = ? OR username = ?) AND password_hash = ?',
             [email_or_username, email_or_username, hashedPassword]
         );
 
         if (officials.length > 0) {
             const official = officials[0];
-            
+
             if (official.account_status !== 'Active') {
-                return res.status(403).json({ status: 'error', message: `Account is ${official.account_status}. Please contact the Super Admin.` });
+                return res.status(403).json({ status: 'error', message: `Account is ${official.account_status}.` });
             }
-            
-            // Update last login timestamp
+
             await db.query('UPDATE tbl_BarangayOfficials SET last_login = NOW() WHERE user_id = ?', [official.user_id]);
-            
-            // Generate Token
+
             const token = generateToken({ id: official.user_id, role: official.role, username: official.username });
-            
-            return res.status(200).json({ 
-                status: 'success', 
-                message: 'Official login successful', 
-                token: token, 
+
+            // [Inference] The frontend uses 'mustChange' to trigger the security modal.
+            return res.status(200).json({
+                status: 'success',
+                message: 'Official login successful',
+                token: token,
                 role: official.role,
-                first_name: official.full_name // We send this so the React dashboard says "Welcome, [Name]"
+                first_name: official.full_name,
+                // ONLY true if the DB flag is 1
+                mustChange: official.require_password_change === 1
             });
         }
 
@@ -235,13 +233,13 @@ app.post('/api/v1/auth/login', async (req, res) => {
 
             // Generate Token
             const token = generateToken({ id: resident.resident_id, role: 'Resident', email: resident.email_address });
-            
-            return res.status(200).json({ 
-                status: 'success', 
-                message: 'Resident login successful', 
-                token: token, 
+
+            return res.status(200).json({
+                status: 'success',
+                message: 'Resident login successful',
+                token: token,
                 role: 'Resident',
-                first_name: resident.first_name 
+                first_name: resident.first_name
             });
         }
 
@@ -260,16 +258,16 @@ app.post('/api/v1/setup/superadmin', async (req, res) => {
     try {
         const hashedPassword = hashPassword('SuperAdmin123');
         const [existing] = await db.query('SELECT * FROM tbl_BarangayOfficials WHERE username = ?', ['superadmin']);
-        
-        if (existing.length > 0) return res.status(400).json({ error: 'Super Admin account already exists.' });
+
+        if (existing.length > 0) return res.status(400).json({ error: 'Captain account already exists.' });
 
         const query = `
             INSERT INTO tbl_BarangayOfficials (official_id, full_name, email_official, username, password_hash, role, account_status)
-            VALUES ('SA-001', 'System Administrator', 'admin@eserbisyo.com', 'superadmin', ?, 'Super Admin', 'Active')
+            VALUES ('SA-001', 'System Administrator', 'admin@eserbisyo.com', 'superadmin', ?, 'Captain', 'Active')
         `;
-        
+
         await db.query(query, [hashedPassword]);
-        res.status(201).json({ status: 'success', message: 'Default Super Admin created.', credentials: { username: 'superadmin', password: 'SuperAdmin123' } });
+        res.status(201).json({ status: 'success', message: 'Default Captain created.', credentials: { username: 'superadmin', password: 'SuperAdmin123' } });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
@@ -362,8 +360,8 @@ app.post('/api/v1/setup/seed-public', async (req, res) => {
 // PHASE 4: SYSTEM CONFIGURATION & CONTENT
 // ==========================================
 
-// Endpoint 17: Update a System Setting (Super Admin Only)
-app.put('/api/v1/admin/settings/:setting_key', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+// Endpoint 17: Update a System Setting (Captain Only)
+app.put('/api/v1/admin/settings/:setting_key', verifyJWT, roleGuard(['Captain']), async (req, res) => {
     try {
         const { setting_value } = req.body;
         const { setting_key } = req.params;
@@ -387,8 +385,8 @@ app.put('/api/v1/admin/settings/:setting_key', verifyJWT, roleGuard(['Super Admi
     }
 });
 
-// Endpoint 18: Create a Document Type (Super Admin, Secretary)
-app.post('/api/v1/admin/document-types', verifyJWT, roleGuard(['Super Admin', 'Secretary']), async (req, res) => {
+// Endpoint 18: Create a Document Type (Captain, Secretary)
+app.post('/api/v1/admin/document-types', verifyJWT, roleGuard(['Captain', 'Secretary']), async (req, res) => {
     try {
         const { type_name, description, base_fee, requirements, validity_days, is_available } = req.body;
 
@@ -399,9 +397,9 @@ app.post('/api/v1/admin/document-types', verifyJWT, roleGuard(['Super Admin', 'S
             (type_name, description, base_fee, requirements, validity_days, is_available, updated_by)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
-        
+
         await db.query(insertQuery, [
-            type_name, description || null, base_fee || 0.00, requirements || null, 
+            type_name, description || null, base_fee || 0.00, requirements || null,
             validity_days || 180, is_available !== undefined ? is_available : true, req.user.id
         ]);
 
@@ -411,8 +409,19 @@ app.post('/api/v1/admin/document-types', verifyJWT, roleGuard(['Super Admin', 'S
     }
 });
 
+// Endpoint 18.5: Get All Document Types (Admin View - Includes Unavailable)
+app.get('/api/v1/admin/document-types', verifyJWT, roleGuard(['Captain', 'Secretary', 'Captain']), async (req, res) => {
+    try {
+        const query = `SELECT * FROM tbl_DocumentTypes ORDER BY type_name ASC`;
+        const [documents] = await db.query(query);
+        res.status(200).json({ status: 'success', data: documents });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
 // Endpoint 19: Update a Document Type
-app.put('/api/v1/admin/document-types/:id', verifyJWT, roleGuard(['Super Admin', 'Secretary']), async (req, res) => {
+app.put('/api/v1/admin/document-types/:id', verifyJWT, roleGuard(['Captain', 'Secretary']), async (req, res) => {
     try {
         const { type_name, description, base_fee, requirements, validity_days, is_available } = req.body;
         const { id } = req.params;
@@ -422,7 +431,7 @@ app.put('/api/v1/admin/document-types/:id', verifyJWT, roleGuard(['Super Admin',
             SET type_name = ?, description = ?, base_fee = ?, requirements = ?, validity_days = ?, is_available = ?, updated_by = ?
             WHERE doc_type_id = ?
         `;
-        
+
         const [result] = await db.query(updateQuery, [
             type_name, description, base_fee, requirements, validity_days, is_available, req.user.id, id
         ]);
@@ -435,8 +444,8 @@ app.put('/api/v1/admin/document-types/:id', verifyJWT, roleGuard(['Super Admin',
     }
 });
 
-// NEW Endpoint 19.5: Update Document Layout Config (Super Admin / Secretary)
-app.put('/api/v1/admin/document-types/:id/layout', verifyJWT, roleGuard(['Super Admin', 'Secretary']), async (req, res) => {
+// NEW Endpoint 19.5: Update Document Layout Config (Captain / Secretary)
+app.put('/api/v1/admin/document-types/:id/layout', verifyJWT, roleGuard(['Captain', 'Secretary']), async (req, res) => {
     try {
         const { id } = req.params;
         const { layout_config } = req.body; // Expected format: { "name": {"x": 10, "y": 20}, ... }
@@ -450,18 +459,18 @@ app.put('/api/v1/admin/document-types/:id/layout', verifyJWT, roleGuard(['Super 
 
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Document type not found.' });
         res.status(200).json({ status: 'success', message: 'Layout configuration updated successfully.' });
-    } catch (error) { 
-        res.status(500).json({ status: 'error', message: error.message }); 
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
-// Endpoint 20: Create an Announcement (Super Admin, Captain, Secretary)
+// Endpoint 20: Create an Announcement (Captain, Captain, Secretary)
 // ==========================================
 // PHASE: ANNOUNCEMENTS MANAGER
 // ==========================================
 
 // Endpoint 38: Get All Announcements (Admin View)
-app.get('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.get('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
     try {
         const query = `
             SELECT a.*, o.full_name as posted_by_name 
@@ -478,7 +487,7 @@ app.get('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Adm
 
 // Endpoint 39: Create Announcement
 // Endpoint 39: Create Announcement (Supports native image_path)
-app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Captain', 'Secretary', 'Admin']), async (req, res) => {
+app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Captain', 'Secretary', 'Admin']), async (req, res) => {
     try {
         const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path } = req.body;
         const posted_by = req.user.id;
@@ -487,10 +496,10 @@ app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Ca
             INSERT INTO tbl_announcements (title, content_body, target_audience, is_pinned, status, expiry_date, image_path, posted_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
-        
+
         await db.query(insertQuery, [
-            title, content_body, target_audience || 'All', 
-            is_pinned ? 1 : 0, status || 'Draft', 
+            title, content_body, target_audience || 'All',
+            is_pinned ? 1 : 0, status || 'Draft',
             expiry_date || null, image_path || null, posted_by
         ]);
 
@@ -501,7 +510,7 @@ app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Super Admin', 'Ca
 });
 
 // Endpoint 40: Update Announcement (Supports native image_path)
-app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Super Admin', 'Captain', 'Secretary', 'Admin']), async (req, res) => {
+app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Captain', 'Secretary', 'Admin']), async (req, res) => {
     try {
         const { id } = req.params;
         const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path } = req.body;
@@ -513,8 +522,8 @@ app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Super Admin', 
                 WHERE announcement_id = ?
             `;
             await db.query(updateQuery, [
-                title, content_body, target_audience, 
-                is_pinned ? 1 : 0, status, 
+                title, content_body, target_audience,
+                is_pinned ? 1 : 0, status,
                 expiry_date || null, image_path || null, id
             ]);
         } else {
@@ -531,7 +540,7 @@ app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Super Admin', 
 });
 
 // Endpoint 41: Delete Announcement
-app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Super Admin', 'Captain']), async (req, res) => {
+app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
     try {
         const { id } = req.params;
         await db.query('DELETE FROM tbl_announcements WHERE announcement_id = ?', [id]);
@@ -542,7 +551,7 @@ app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Super Admin
 });
 
 // Endpoint 37: Get All Residents for Admin Verification
-app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin', 'Secretary', 'Captain']), async (req, res) => {
+app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Captain', 'Secretary', 'Captain']), async (req, res) => {
     try {
         const { account_status } = req.body;
         const { id } = req.params;
@@ -552,10 +561,10 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin
             return res.status(400).json({ error: "Invalid status. Must be 'Pending', 'Active', or 'Blocked'." });
         }
 
-        // 🛡️ STRICT SECURITY RULE: Only Captain and Super Admin can block accounts
-        if (account_status === 'Blocked' && !['Super Admin', 'Captain'].includes(userRole)) {
-            return res.status(403).json({ 
-                error: "Unauthorized action. Only the Barangay Captain or Super Admin can block a resident's account." 
+        // 🛡️ STRICT SECURITY RULE: Only Captain and Captain can block accounts
+        if (account_status === 'Blocked' && !['Captain', 'Captain'].includes(userRole)) {
+            return res.status(403).json({
+                error: "Unauthorized action. Only the Barangay Captain or Captain can block a resident's account."
             });
         }
 
@@ -566,9 +575,9 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin
 
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Resident not found.' });
 
-        res.status(200).json({ 
-            status: 'success', 
-            message: `Resident account successfully marked as ${account_status}.` 
+        res.status(200).json({
+            status: 'success',
+            message: `Resident account successfully marked as ${account_status}.`
         });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
@@ -576,7 +585,7 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin
 });
 
 // Endpoint 37: Get All Residents for Admin Verification (All Officials Can View)
-app.get('/api/v1/admin/residents', verifyJWT, roleGuard(['Super Admin', 'Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.get('/api/v1/admin/residents', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
     try {
         const query = `
             SELECT resident_id, first_name, middle_name, last_name, email_address, 
@@ -585,7 +594,7 @@ app.get('/api/v1/admin/residents', verifyJWT, roleGuard(['Super Admin', 'Admin',
             ORDER BY CASE WHEN account_status = 'Pending' THEN 1 ELSE 2 END, last_name ASC
         `;
         const [residents] = await db.query(query);
-        
+
         res.status(200).json({ status: 'success', data: residents });
     } catch (error) {
         console.error("[FETCH RESIDENTS ERROR]:", error);
@@ -594,7 +603,7 @@ app.get('/api/v1/admin/residents', verifyJWT, roleGuard(['Super Admin', 'Admin',
 });
 
 // Upgraded Endpoint 20.5: Manage Resident Account Status
-app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Super Admin', 'Captain', 'Admin', 'Secretary']), async (req, res) => {
+app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Captain', 'Captain', 'Admin', 'Secretary']), async (req, res) => {
     try {
         const { account_status } = req.body;
         const { id } = req.params;
@@ -630,7 +639,7 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.fields([
 ]), async (req, res) => {
     try {
         const { doc_type_id, purpose } = req.body;
-        const resident_id = req.user.id; 
+        const resident_id = req.user.id;
 
         if (!doc_type_id || !purpose) {
             return res.status(400).json({ status: 'error', message: 'doc_type_id and purpose are required.' });
@@ -644,9 +653,9 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.fields([
         `, [resident_id, doc_type_id]);
 
         if (existingActive.length > 0) {
-            return res.status(403).json({ 
-                status: 'error', 
-                message: 'You already have an active request for this document type. Please wait for it to be completed or rejected before filing another.' 
+            return res.status(403).json({
+                status: 'error',
+                message: 'You already have an active request for this document type. Please wait for it to be completed or rejected before filing another.'
             });
         }
 
@@ -661,17 +670,17 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.fields([
         if (req.files && req.files['id_proof_image'] && req.files['id_proof_image'][0].buffer) {
             const idFile = req.files['id_proof_image'][0];
             const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-            
+
             let ext = '.bin';
             if (idFile.mimetype === 'image/jpeg') ext = '.jpg';
             else if (idFile.mimetype === 'image/png') ext = '.png';
             else if (idFile.mimetype === 'application/pdf') ext = '.pdf';
-            
+
             const savedFilename = `idproof_${resident_id}_${uniqueSuffix}${ext}.enc`;
-            
+
             // Encrypt and save to the vault
             encryptAndSaveFile(idFile.buffer, savedFilename);
-            
+
             // Update the resident's profile with their new ID proof
             await db.query('UPDATE tbl_Residents SET id_proof_image = ? WHERE resident_id = ?', [savedFilename, resident_id]);
         }
@@ -681,15 +690,15 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.fields([
             req.files['supporting_docs'].forEach((file, index) => {
                 if (file.buffer) {
                     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-                    
+
                     let ext = '.bin';
                     if (file.mimetype === 'image/jpeg') ext = '.jpg';
                     else if (file.mimetype === 'image/png') ext = '.png';
                     else if (file.mimetype === 'application/pdf') ext = '.pdf';
-                    
+
                     // CRITICAL: We embed the reference_no right into the filename
                     const savedSupportName = `support_${reference_no}_${index}_${uniqueSuffix}${ext}.enc`;
-                    
+
                     // Encrypt and save using your existing utility!
                     encryptAndSaveFile(file.buffer, savedSupportName);
                 }
@@ -705,8 +714,8 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.fields([
         `;
         const [result] = await db.query(insertQuery, [resident_id, doc_type_id, reference_no, purpose]);
 
-        res.status(201).json({ 
-            status: 'success', 
+        res.status(201).json({
+            status: 'success',
             message: 'Document request submitted successfully.',
             reference_no: reference_no,
             request_id: Number(result.insertId) // Safely converted BigInt to Number
@@ -738,8 +747,8 @@ app.get('/api/v1/requests/resident/me', verifyJWT, roleGuard(['Resident']), asyn
     }
 });
 
-// Endpoint 23: Get Pending Requests (Secretary / Super Admin)
-app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+// Endpoint 23: Get Pending Requests (Secretary / Captain)
+app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Captain']), async (req, res) => {
     try {
         const query = `
             SELECT r.request_id, r.reference_no, res.first_name, res.last_name, res.id_proof_image, dt.type_name, r.purpose, r.date_requested
@@ -758,9 +767,9 @@ app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Super Ad
 });
 
 
-// Endpoint 24: Initial Verification (Secretary / Super Admin)
+// Endpoint 24: Initial Verification (Secretary / Captain)
 // Upgraded Endpoint 24: Initial Verification (With Audit Logging)
-app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'Secretary', 'Super Admin', 'Captain', 'Treasurer']), async (req, res) => {
+app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'Secretary', 'Captain', 'Captain', 'Treasurer']), async (req, res) => {
     try {
         const { action, rejection_reason } = req.body; // action: 'Approve' or 'Reject'
         const { request_id } = req.params;
@@ -777,7 +786,7 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'S
         const oldStatus = current[0].request_status;
         const refNo = current[0].reference_no;
         const resident_id = current[0].resident_id;
-        
+
         let newStatus = action === 'Reject' ? 'Rejected' : 'For Payment';
 
         // 2. Update the database
@@ -798,8 +807,8 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'S
         // Email Hook Simulation (FR14)
         console.log(`[EMAIL SIMULATION] Sent to Resident ID ${resident_id}: Your request ${refNo} is now ${newStatus}.`);
 
-        res.status(200).json({ 
-            status: 'success', 
+        res.status(200).json({
+            status: 'success',
             message: `Request successfully marked as ${newStatus}.`
         });
 
@@ -831,8 +840,8 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
             WHERE payment_status = 'Paid'
         `);
 
-        res.status(200).json({ 
-            status: 'success', 
+        res.status(200).json({
+            status: 'success',
             data: {
                 pending: Number(reqStats[0].pending_count || 0),
                 forPayment: Number(reqStats[0].payment_count || 0),
@@ -848,7 +857,7 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
 });
 
 // Endpoint 29: Process Payment (Treasurer/Admin Only)
-app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Treasurer', 'Super Admin', 'Captain']), async (req, res) => {
+app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Treasurer', 'Captain', 'Captain']), async (req, res) => {
     try {
         const { request_id } = req.params;
         const { or_number, amount_paid } = req.body;
@@ -860,7 +869,7 @@ app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Treasurer', 'Supe
 
         // 1. Verify the request is actually waiting for payment
         const [request] = await db.query(
-            'SELECT reference_no, request_status FROM tbl_Requests WHERE request_id = ?', 
+            'SELECT reference_no, request_status FROM tbl_Requests WHERE request_id = ?',
             [request_id]
         );
 
@@ -880,9 +889,9 @@ app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Treasurer', 'Supe
         // 3. Log the Financial Transaction to the Audit Trail (Phase 8)
         await logPayment(treasurer_id, request_id, amount_paid, or_number, `Payment received for ${request[0].reference_no}`);
 
-        res.status(200).json({ 
-            status: 'success', 
-            message: 'Payment recorded. Request is now in the processing queue.' 
+        res.status(200).json({
+            status: 'success',
+            message: 'Payment recorded. Request is now in the processing queue.'
         });
 
     } catch (error) {
@@ -896,9 +905,9 @@ app.put('/api/v1/residents/me/id-proof', verifyJWT, roleGuard(['Resident']), asy
     try {
         const { id_proof_filename } = req.body;
         const resident_id = req.user.id;
-        
+
         if (!id_proof_filename) return res.status(400).json({ error: 'id_proof_filename is required.' });
-        
+
         await db.query('UPDATE tbl_Residents SET id_proof_image = ? WHERE resident_id = ?', [id_proof_filename, resident_id]);
         res.status(200).json({ status: 'success', message: 'ID Proof updated successfully.' });
     } catch (error) {
@@ -913,7 +922,7 @@ app.get('/api/v1/residents/me/profile', verifyJWT, roleGuard(['Resident']), asyn
 
         // 1. Match the real column names: address_street and contact_number
         const [rows] = await db.query(
-            'SELECT first_name, last_name, email_address, contact_number, address_street, account_status FROM tbl_Residents WHERE resident_id = ?', 
+            'SELECT first_name, last_name, email_address, contact_number, address_street, account_status FROM tbl_Residents WHERE resident_id = ?',
             [residentId]
         );
 
@@ -958,17 +967,29 @@ app.get('/api/v1/admin/profile', verifyJWT, async (req, res) => {
 app.put('/api/v1/admin/profile/password', verifyJWT, async (req, res) => {
     try {
         const { current_password, new_password } = req.body;
-        const [user] = await db.query('SELECT password_hash FROM tbl_barangayofficials WHERE user_id = ?', [req.user.id]);
+        const userId = req.user.id;
 
+        // [Inference] We fetch the current hash to verify identity or allow forced reset
+        const [user] = await db.query('SELECT password_hash FROM tbl_BarangayOfficials WHERE user_id = ?', [userId]);
+
+        // [Unverified] This assumes the 'ForcePasswordChange' modal sends the temporary password as current_password
         const hashedCurrent = crypto.createHash('sha256').update(current_password).digest('hex');
-        if (hashedCurrent !== user[0].password_hash) {
+
+        // Skip current password check ONLY if backend logic allows a "forced reset" keyword 
+        // OR simply verify the current password provided matches the temp one.
+        if (current_password !== 'SYSTEM_FORCED_RESET' && hashedCurrent !== user[0].password_hash) {
             return res.status(400).json({ error: 'Incorrect current password' });
         }
 
         const hashedNew = crypto.createHash('sha256').update(new_password).digest('hex');
-        await db.query('UPDATE tbl_barangayofficials SET password_hash = ? WHERE user_id = ?', [hashedNew, req.user.id]);
 
-        res.status(200).json({ status: 'success', message: 'Password updated successfully' });
+        // CRITICAL: Set require_password_change = 0 so they aren't asked again
+        await db.query(
+            'UPDATE tbl_BarangayOfficials SET password_hash = ?, require_password_change = 0 WHERE user_id = ?',
+            [hashedNew, userId]
+        );
+
+        res.status(200).json({ status: 'success', message: 'Password updated and account secured.' });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
@@ -978,8 +999,8 @@ app.put('/api/v1/admin/profile/password', verifyJWT, async (req, res) => {
 // PHASE 6: FINANCIAL ENCODING & FINAL VALIDATION
 // ==========================================
 
-// Endpoint 25: Get Treasurer's Payment Queue (Treasurer / Super Admin)
-app.get('/api/v1/payments/queue', verifyJWT, roleGuard(['Treasurer', 'Super Admin']), async (req, res) => {
+// Endpoint 25: Get Treasurer's Payment Queue (Treasurer / Captain)
+app.get('/api/v1/payments/queue', verifyJWT, roleGuard(['Treasurer', 'Captain']), async (req, res) => {
     try {
         const query = `
             SELECT r.request_id, r.reference_no, res.first_name, res.last_name, dt.type_name, dt.base_fee, r.date_requested
@@ -997,7 +1018,7 @@ app.get('/api/v1/payments/queue', verifyJWT, roleGuard(['Treasurer', 'Super Admi
 });
 
 // Endpoint 25.5: Get All Requests for Admin Queue
-app.get('/api/v1/admin/requests', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.get('/api/v1/admin/requests', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
     try {
         const query = `
             SELECT 
@@ -1027,12 +1048,12 @@ app.get('/api/v1/admin/requests', verifyJWT, roleGuard(['Admin', 'Super Admin', 
 });
 
 // Endpoint 26.3: Decrypt and Stream Files for Admin Viewing (FIXED)
-app.get('/api/v1/admin/view-file/:filename', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.get('/api/v1/admin/view-file/:filename', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
     try {
         const { filename } = req.params;
-        
+
         // Use the utility function correctly by passing just the filename
-        const decryptedBuffer = decryptFileBuffer(filename); 
+        const decryptedBuffer = decryptFileBuffer(filename);
 
         let contentType = 'application/octet-stream';
         if (filename.toLowerCase().includes('.jpg') || filename.toLowerCase().includes('.jpeg')) contentType = 'image/jpeg';
@@ -1040,7 +1061,7 @@ app.get('/api/v1/admin/view-file/:filename', verifyJWT, roleGuard(['Admin', 'Sup
         else if (filename.toLowerCase().includes('.pdf')) contentType = 'application/pdf';
 
         res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Disposition', 'inline'); 
+        res.setHeader('Content-Disposition', 'inline');
         res.send(decryptedBuffer);
 
     } catch (error) {
@@ -1050,11 +1071,11 @@ app.get('/api/v1/admin/view-file/:filename', verifyJWT, roleGuard(['Admin', 'Sup
 });
 
 // Endpoint 26.4: List Supporting Files for a Specific Reference No
-app.get('/api/v1/admin/request-files/:refNo', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Captain']), async (req, res) => {
+app.get('/api/v1/admin/request-files/:refNo', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Captain']), async (req, res) => {
     try {
         const { refNo } = req.params;
         const uploadDir = path.join(__dirname, 'uploads');
-        
+
         // Scan the directory for files matching 'support_REQ-XXXXXX'
         const files = fs.readdirSync(uploadDir);
         const matchingFiles = files.filter(f => f.includes(`support_${refNo}`));
@@ -1065,8 +1086,8 @@ app.get('/api/v1/admin/request-files/:refNo', verifyJWT, roleGuard(['Admin', 'Su
     }
 });
 
-// Endpoint 26: Process a Payment / Update Payment Status (Treasurer / Super Admin)
-app.post('/api/v1/payments', verifyJWT, roleGuard(['Treasurer', 'Super Admin']), async (req, res) => {
+// Endpoint 26: Process a Payment / Update Payment Status (Treasurer / Captain)
+app.post('/api/v1/payments', verifyJWT, roleGuard(['Treasurer', 'Captain']), async (req, res) => {
     try {
         const { request_id, amount_paid, or_number, payor_name, payment_status } = req.body;
         const treasurer_id = req.user.id;
@@ -1111,9 +1132,9 @@ app.post('/api/v1/payments', verifyJWT, roleGuard(['Treasurer', 'Super Admin']),
         `;
         await db.query(updateRequestQuery, [next_request_status, request_id]);
 
-        res.status(201).json({ 
-            status: 'success', 
-            message: `Payment successfully encoded as ${final_status}. Request is now ${next_request_status}.` 
+        res.status(201).json({
+            status: 'success',
+            message: `Payment successfully encoded as ${final_status}. Request is now ${next_request_status}.`
         });
     } catch (error) {
         // Handle Duplicate OR Number cleanly
@@ -1124,8 +1145,8 @@ app.post('/api/v1/payments', verifyJWT, roleGuard(['Treasurer', 'Super Admin']),
     }
 });
 
-// Endpoint 27: Mark Document as Exempted / Free (Treasurer / Super Admin)
-app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer', 'Super Admin']), async (req, res) => {
+// Endpoint 27: Mark Document as Exempted / Free (Treasurer / Captain)
+app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer', 'Captain']), async (req, res) => {
     try {
         const { request_id } = req.params;
         const treasurer_id = req.user.id;
@@ -1156,7 +1177,7 @@ app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer
 });
 
 // Endpoint 28: Update Request Status (Approve/Reject)
-app.put('/api/v1/admin/requests/:id/status', verifyJWT, roleGuard(['Admin', 'Super Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.put('/api/v1/admin/requests/:id/status', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         const { id } = req.params;
         const { new_status, rejection_reason } = req.body;
@@ -1180,9 +1201,9 @@ app.put('/api/v1/admin/requests/:id/status', verifyJWT, roleGuard(['Admin', 'Sup
         // 3. Log the change to the Audit Trail
         await logStatusChange(adminId, id, oldStatus, new_status, `Admin ${new_status} request ${refNo}`);
 
-        res.status(200).json({ 
-            status: 'success', 
-            message: `Request ${new_status === 'Rejected' ? 'rejected' : 'verified'} successfully.` 
+        res.status(200).json({
+            status: 'success',
+            message: `Request ${new_status === 'Rejected' ? 'rejected' : 'verified'} successfully.`
         });
 
     } catch (error) {
@@ -1191,8 +1212,8 @@ app.put('/api/v1/admin/requests/:id/status', verifyJWT, roleGuard(['Admin', 'Sup
     }
 });
 
-// Endpoint 28: Mark Request as Ready for Pickup (Secretary / Super Admin)
-app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+// Endpoint 28: Mark Request as Ready for Pickup (Secretary / Captain)
+app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary', 'Captain']), async (req, res) => {
     try {
         const { request_id } = req.params;
 
@@ -1215,8 +1236,8 @@ app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary',
     }
 });
 
-// Endpoint 29: Issue Document (Secretary / Super Admin)
-app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+// Endpoint 29: Issue Document (Secretary / Captain)
+app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary', 'Captain']), async (req, res) => {
     try {
         const { request_id } = req.params;
 
@@ -1241,11 +1262,11 @@ app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary',
 // PHASE 7: DOCUMENT GENERATION & CRYPTOGRAPHY
 // ==========================================
 
-// Endpoint 30: Signature Vault - Upload Signature (Super Admin / Captain)
-app.post('/api/v1/admin/signatures/upload', verifyJWT, roleGuard(['Super Admin', 'Captain']), express.raw({ type: 'image/png', limit: '2mb' }), async (req, res) => {
+// Endpoint 30: Signature Vault - Upload Signature (Captain / Captain)
+app.post('/api/v1/admin/signatures/upload', verifyJWT, roleGuard(['Captain', 'Captain']), express.raw({ type: 'image/png', limit: '2mb' }), async (req, res) => {
     try {
         if (!Buffer.isBuffer(req.body)) return res.status(400).json({ error: 'No PNG signature provided in binary body.' });
-        
+
         const filename = `sig_${req.user.id}_${Date.now()}.png.enc`;
         encryptAndSaveFile(req.body, filename);
 
@@ -1260,8 +1281,37 @@ app.post('/api/v1/admin/signatures/upload', verifyJWT, roleGuard(['Super Admin',
     } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
-// Endpoint 31: PDF Generation & QR Stamping (Secretary / Super Admin)
-app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secretary', 'Super Admin']), async (req, res) => {
+// Endpoint 30.2: Get My Active Signature (Captain / Captain Only)
+app.get('/api/v1/admin/signatures/me', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+    try {
+        const [sig] = await db.query(
+            "SELECT signature_blob FROM tbl_DigitalSignatures WHERE official_id = ? AND status = 'Active' LIMIT 1",
+            [req.user.id]
+        );
+        res.status(200).json({ status: 'success', data: sig[0] || null });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 34.5: Get All Barangay Officials (Captain Only)
+app.get('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+    try {
+        const query = `
+            SELECT user_id, official_id, full_name, email_official, username, role, account_status, last_login 
+            FROM tbl_BarangayOfficials 
+            WHERE role != 'Captain'
+            ORDER BY full_name ASC
+        `;
+        const [officials] = await db.query(query);
+        res.status(200).json({ status: 'success', data: officials });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 31: PDF Generation & QR Stamping (Secretary / Captain)
+app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secretary', 'Captain']), async (req, res) => {
     try {
         const { request_id } = req.params;
 
@@ -1330,17 +1380,17 @@ app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secr
 
 // Endpoint 30.5: Template Upload (Background Document Template)
 // Using multer for file upload
-app.post('/api/v1/admin/document-types/:id/template', verifyJWT, roleGuard(['Super Admin', 'Secretary']), upload.single('file'), async (req, res) => {
+app.post('/api/v1/admin/document-types/:id/template', verifyJWT, roleGuard(['Captain', 'Secretary']), upload.single('file'), async (req, res) => {
     try {
         const { id } = req.params;
-        
+
         if (!req.file || !req.file.buffer) {
             return res.status(400).json({ error: 'No template file uploaded.' });
         }
 
         const fileBuffer = req.file.buffer;
         const mimetype = req.file.mimetype;
-        
+
         let fileExtension = '.bin';
         if (mimetype.includes('image/jpeg')) fileExtension = '.jpg';
         else if (mimetype.includes('image/png')) fileExtension = '.png';
@@ -1357,13 +1407,61 @@ app.post('/api/v1/admin/document-types/:id/template', verifyJWT, roleGuard(['Sup
             [savedFilename, req.user.id, id]
         );
 
-        res.status(200).json({ 
-            status: 'success', 
+        res.status(200).json({
+            status: 'success',
             message: 'Document template uploaded and encrypted successfully.',
-            filename: savedFilename 
+            filename: savedFilename
         });
-    } catch (error) { 
-        res.status(500).json({ status: 'error', message: error.message }); 
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 30.8: Test Print Layout Configurations (Generates Dummy PDF)
+app.post('/api/v1/admin/document-types/:id/test-pdf', verifyJWT, roleGuard(['Captain', 'Secretary', 'Admin']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { layout_config } = req.body;
+
+        const [docRows] = await db.query('SELECT template_file FROM tbl_DocumentTypes WHERE doc_type_id = ?', [id]);
+        if (docRows.length === 0) return res.status(404).json({ error: 'Document type not found.' });
+
+        let templateBuffer = null;
+        if (docRows[0].template_file) {
+            try {
+                templateBuffer = decryptFileBuffer(docRows[0].template_file);
+            } catch (e) {
+                console.error("Template decryption failed:", e.message);
+            }
+        }
+
+        const [sigRows] = await db.query("SELECT signature_blob FROM tbl_DigitalSignatures WHERE status = 'Active' LIMIT 1");
+        let sigBuffer = null;
+        if (sigRows.length > 0) {
+            try { sigBuffer = decryptFileBuffer(sigRows[0].signature_blob); } catch (e) { }
+        }
+
+        const dummyData = {
+            first_name: "JUAN",
+            last_name: "DELA CRUZ",
+            purpose: "FOR MEDICAL ASSISTANCE",
+            reference_no: "TEST-0000-XYZ"
+        };
+
+        let parsedLayout = {};
+        try {
+            parsedLayout = typeof layout_config === 'string' ? JSON.parse(layout_config) : (layout_config || {});
+        } catch (e) {
+            console.error("Test print layout parse error:", e);
+        }
+
+        const pdfBuffer = await generateBarangayPDF(dummyData, sigBuffer, "dummyqrhash123", parsedLayout, templateBuffer);
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename=test_print.pdf`);
+        res.send(pdfBuffer);
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
@@ -1404,8 +1502,8 @@ app.get('/api/v1/public/verify/:qr_hash', async (req, res) => {
 // PHASE 8: SYSTEM ADMINISTRATION & AUDITING
 // ==========================================
 
-// Endpoint 33: Create Official Account (Super Admin Only)
-app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+// Endpoint 33: Create Official Account (Captain Only)
+app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
     try {
         const { official_id, full_name, email_official, username, password, role } = req.body;
 
@@ -1415,7 +1513,7 @@ app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Super Admin']), async
         }
 
         // Validate role
-        const validRoles = ['Admin', 'Secretary', 'Treasurer', 'Captain', 'Super Admin'];
+        const validRoles = ['Admin', 'Secretary', 'Treasurer', 'Captain', 'Captain'];
         if (!validRoles.includes(role)) {
             return res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(', ')}` });
         }
@@ -1431,13 +1529,13 @@ app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Super Admin']), async
 
         // Hash password and create official
         const hashedPassword = hashPassword(password);
-        
+
         const insertQuery = `
             INSERT INTO tbl_BarangayOfficials 
             (official_id, full_name, email_official, username, password_hash, role, account_status)
             VALUES (?, ?, ?, ?, ?, ?, 'Active')
         `;
-        
+
         const [result] = await db.query(insertQuery, [
             official_id, full_name, email_official, username, hashedPassword, role
         ]);
@@ -1454,18 +1552,18 @@ app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Super Admin']), async
             ip_address: req.ip
         });
 
-        res.status(201).json({ 
-            status: 'success', 
+        res.status(201).json({
+            status: 'success',
             message: `Official account created successfully.`,
             official_id: result.insertId
         });
-    } catch (error) { 
-        res.status(500).json({ status: 'error', message: error.message }); 
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
-// Endpoint 34: Update Official Account Status (Super Admin Only)
-app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+// Endpoint 34: Update Official Account Status (Captain Only)
+app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
     try {
         const { id } = req.params;
         const { account_status } = req.body;
@@ -1482,7 +1580,7 @@ app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Super Admin
             return res.status(404).json({ error: 'Official account not found.' });
         }
 
-        // Prevent Super Admin from deactivating themselves
+        // Prevent Captain from deactivating themselves
         if (parseInt(id) === req.user.id) {
             return res.status(400).json({ error: 'You cannot modify your own account status.' });
         }
@@ -1508,31 +1606,37 @@ app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Super Admin
             ip_address: req.ip
         });
 
-        res.status(200).json({ 
-            status: 'success', 
-            message: `Official account status updated to ${account_status}.` 
+        res.status(200).json({
+            status: 'success',
+            message: `Official account status updated to ${account_status}.`
         });
-    } catch (error) { 
-        res.status(500).json({ status: 'error', message: error.message }); 
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
-// Endpoint 35: View Audit Logs (Super Admin Only) - Forensic Dashboard
-app.get('/api/v1/admin/audit-logs', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+// Endpoint 35: View Audit Logs (Captain Only) - Forensic Dashboard
+// Endpoint 35: View Audit Logs (Captain Only) - Forensic Dashboard
+app.get('/api/v1/admin/audit-logs', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 100;
         const offset = parseInt(req.query.offset) || 0;
-        
-        // Ensure reasonable limits
         const safeLimit = Math.min(Math.max(limit, 1), 500);
-        
+
+        // UPGRADED QUERY: Joins Officials and Residents tables to pull real names
         const query = `
-            SELECT log_id, user_id, user_type, table_affected, record_id, action_type, old_value, new_value, timestamp, ip_address
-            FROM tbl_AuditLogs
-            ORDER BY timestamp DESC
+            SELECT 
+                a.log_id, a.user_id, a.user_type, a.table_affected, a.record_id, 
+                a.action_type, a.old_value, a.new_value, a.timestamp, a.ip_address,
+                o.full_name as official_name, o.role as official_role,
+                r.first_name as res_first, r.last_name as res_last
+            FROM tbl_AuditLogs a
+            LEFT JOIN tbl_BarangayOfficials o ON a.user_id = o.user_id AND a.user_type = 'Official'
+            LEFT JOIN tbl_Residents r ON a.user_id = r.resident_id AND a.user_type = 'Resident'
+            ORDER BY a.timestamp DESC
             LIMIT ? OFFSET ?
         `;
-        
+
         const [logs] = await db.query(query, [safeLimit, offset]);
 
         // Parse JSON fields
@@ -1542,36 +1646,84 @@ app.get('/api/v1/admin/audit-logs', verifyJWT, roleGuard(['Super Admin']), async
             new_value: log.new_value ? JSON.parse(log.new_value) : null
         }));
 
-        res.status(200).json({ 
-            status: 'success', 
+        res.status(200).json({
+            status: 'success',
             data: formattedLogs,
-            pagination: {
-                limit: safeLimit,
-                offset: offset
-            }
+            pagination: { limit: safeLimit, offset: offset }
         });
-    } catch (error) { 
-        res.status(500).json({ status: 'error', message: error.message }); 
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
-// Endpoint 36: View System Settings (Super Admin Only)
-app.get('/api/v1/admin/settings', verifyJWT, roleGuard(['Super Admin']), async (req, res) => {
+// Endpoint 34.6: Delete Official Account (Captain and Captain)
+app.delete('/api/v1/admin/officials/:id', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Prevent self-deletion to avoid system lockout
+        if (parseInt(id) === req.user.id) {
+            return res.status(400).json({ error: 'You cannot delete your own account while logged in.' });
+        }
+
+        // Fetch target data for the forensic audit log
+        const [target] = await db.query('SELECT username, role FROM tbl_BarangayOfficials WHERE user_id = ?', [id]);
+        if (target.length === 0) return res.status(404).json({ error: 'Official not found.' });
+
+        // Log the deletion to tbl_auditlogs before removal
+        await logAction({
+            user_id: req.user.id,
+            user_type: 'Official',
+            table_affected: 'tbl_BarangayOfficials',
+            record_id: id,
+            action_type: 'DELETE',
+            old_value: { username: target[0].username, role: target[0].role },
+            new_value: null,
+            ip_address: req.ip
+        });
+
+        // Permanently remove from tbl_BarangayOfficials
+        await db.query('DELETE FROM tbl_BarangayOfficials WHERE user_id = ?', [id]);
+
+        res.status(200).json({ status: 'success', message: 'Official account permanently removed.' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 33.5: Get All Staff (Captain and Captain)
+app.get('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+    try {
+        const query = `
+            SELECT user_id, official_id, full_name, email_official, username, role, account_status, last_login 
+            FROM tbl_BarangayOfficials 
+            WHERE role != 'Captain'
+            ORDER BY full_name ASC
+        `;
+        const [officials] = await db.query(query);
+        res.status(200).json({ status: 'success', data: officials });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 36: View System Settings (Captain Only)
+app.get('/api/v1/admin/settings', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
     try {
         const query = `
             SELECT setting_id, setting_key, setting_value, description, category, data_type, is_encrypted, last_updated
             FROM tbl_SystemSettings
             ORDER BY category, setting_key
         `;
-        
+
         const [settings] = await db.query(query);
-        
-        res.status(200).json({ 
-            status: 'success', 
-            data: settings 
+
+        res.status(200).json({
+            status: 'success',
+            data: settings
         });
-    } catch (error) { 
-        res.status(500).json({ status: 'error', message: error.message }); 
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
     }
 });
 

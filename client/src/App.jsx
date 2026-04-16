@@ -16,6 +16,11 @@ import PaymentsQueue from './pages/admin/PaymentsQueue';
 import ManageResidents from './pages/admin/ManageResidents';
 import Announcements from './pages/admin/ManageAnnouncements';
 import MyProfile from './pages/admin/MyProfile';
+import ManageDocuments from './pages/admin/ManageDocuments';
+import SuperAdminDashboard from './pages/admin/SuperAdminDashboard';
+import ManageOfficials from './pages/admin/ManageOfficials';
+import AuditLogs from './pages/admin/AuditLogs';
+import SystemSettings from './pages/admin/SystemSettings';
 
 // --- TEMPORARY PLACEHOLDER PAGES ---
 // We will replace these with real, styled components in the next steps
@@ -58,7 +63,12 @@ export default function App() {
         <Route path="residents" element={<ManageResidents />} />
         <Route path="announcements" element={<Announcements />} />
         <Route path="profile" element={<MyProfile />} />
-        <Route path="payments" element={<PaymentsQueue />} />      
+        <Route path="payments" element={<PaymentsQueue />} />  
+        <Route path="documents" element={<ManageDocuments />} />   
+        <Route path="superadmin" element={<SuperAdminDashboard />} /> 
+        <Route path="officials" element={<ManageOfficials />} />
+        <Route path="audit" element={<AuditLogs />} />
+        <Route path="settings" element={<SystemSettings />} />
       </Route>
 
         {/* Catch-All 404 Route */}

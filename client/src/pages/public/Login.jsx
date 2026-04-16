@@ -30,7 +30,6 @@ export default function Login() {
     setIsLoginView(!isLoginView);
     setError('');
     setSuccess('');
-    // Scroll to top of form on toggle
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -54,6 +53,14 @@ export default function Login() {
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('role', response.data.role);
         localStorage.setItem('first_name', response.data.first_name); 
+        
+        // --- SECURE PASSWORD FLAG ---
+        // Catches the flag sent by server.js for newly created officials
+        if (response.data.mustChange) {
+          localStorage.setItem('mustChange', 'true');
+        } else {
+          localStorage.setItem('mustChange', 'false');
+        }
         
         if (response.data.role === 'Resident') {
           navigate('/resident/dashboard');
@@ -125,7 +132,7 @@ export default function Login() {
       {/* --- RIGHT SIDE: THE SCROLLABLE FORM CONTAINER --- */}
       <Box sx={{ 
         flex: 1, 
-        ml: { xs: 0, md: '50%', lg: '60%' }, // Offset for the fixed blue side
+        ml: { xs: 0, md: '50%', lg: '60%' }, 
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'center', 

@@ -2,24 +2,33 @@ import { useState, useEffect } from 'react';
 import { 
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, Button, CircularProgress, Dialog, DialogTitle, 
-  DialogContent, DialogActions, Grid, Divider, Stack, TextField, InputAdornment
+  DialogContent, DialogActions, Grid, Divider, Stack, TextField, InputAdornment, Tooltip, IconButton, useTheme
 } from '@mui/material';
 
-// Icons
+// Icons for a professional civic look
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CancelIcon from '@mui/icons-material/Cancel';
 import FilePresentIcon from '@mui/icons-material/FilePresent';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import PaymentsOutlinedIcon from '@mui/icons-material/PaymentsOutlined';
 import NumbersOutlinedIcon from '@mui/icons-material/NumbersOutlined';
+import PrintIcon from '@mui/icons-material/Print';
+import TaskAltIcon from '@mui/icons-material/TaskAlt';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import HighlightOffIcon from '@mui/icons-material/HighlightOff';
+import SearchIcon from '@mui/icons-material/Search';
+import DescriptionIcon from '@mui/icons-material/Description';
+import FilterListIcon from '@mui/icons-material/FilterList';
 
 import api from '../../utils/axios';
 
 export default function RequestsQueue() {
+  const theme = useTheme();
   const [requests, setRequests] = useState([]);
+  const [filteredRequests, setFilteredRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Modal States
   const [selectedReq, setSelectedReq] = useState(null);
@@ -27,22 +36,40 @@ export default function RequestsQueue() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   
-  // Data States
+  // Data & Preview States
   const [extraFiles, setExtraFiles] = useState([]);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [previewType, setPreviewType] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
   
-  // Payment State (Includes change calculation)
+  // Payment States
   const [paymentData, setPaymentData] = useState({ or_number: '', amount_received: '' });
 
+  // --- UPDATED ROLE ACCESS CONTROL ---
+  // Expanded to include 'Captain' for fulfillment and collection oversight
+  const userRole = localStorage.getItem('role') || 'Official';
+  const isSecretaryOrAdmin = ['Secretary', 'Super Admin', 'Captain'].includes(userRole);
+  const isTreasurerOrAdmin = ['Treasurer', 'Super Admin', 'Captain'].includes(userRole);
+
   useEffect(() => { fetchRequests(); }, []);
+
+  useEffect(() => {
+    const query = searchQuery.toLowerCase();
+    const filtered = requests.filter(r => 
+      r.reference_no.toLowerCase().includes(query) || 
+      `${r.first_name} ${r.last_name}`.toLowerCase().includes(query) ||
+      r.type_name.toLowerCase().includes(query)
+    );
+    setFilteredRequests(filtered);
+  }, [searchQuery, requests]);
 
   const fetchRequests = async () => {
     try {
       const res = await api.get('/admin/requests');
       setRequests(res.data.data);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+      setFilteredRequests(res.data.data);
+    } catch (err) { console.error("Fetch error:", err); } 
+    finally { setLoading(false); }
   };
 
   const handleCloseAll = () => {
@@ -53,22 +80,17 @@ export default function RequestsQueue() {
     setSelectedReq(null);
     setPreviewUrl(null);
     setPaymentData({ or_number: '', amount_received: '' });
+    setRejectionReason('');
   };
 
-  // --- MODAL TRIGGERS ---
+  // --- LOGIC HANDLERS ---
   const handleOpenReview = async (req) => {
     setSelectedReq(req);
     setReviewModalOpen(true);
     try {
       const res = await api.get(`/admin/request-files/${req.reference_no}`);
       setExtraFiles(res.data.files);
-    } catch (err) { console.error(err); }
-  };
-
-  const handleOpenPayment = (req) => {
-    setSelectedReq(req);
-    setPaymentData({ or_number: '', amount_received: req.base_fee || '' });
-    setPaymentModalOpen(true);
+    } catch (err) { console.error("Files fetch error:", err); }
   };
 
   const handlePreview = async (filename) => {
@@ -78,35 +100,25 @@ export default function RequestsQueue() {
       const response = await api.get(`/admin/view-file/${filename}`, { responseType: 'blob' });
       setPreviewUrl(URL.createObjectURL(response.data));
       setPreviewType(filename.toLowerCase().includes('.pdf') ? 'pdf' : 'image');
-    } catch (err) { alert("Could not decrypt file for viewing."); }
+    } catch (err) { alert("Access Denied: Could not decrypt sensitive document."); }
   };
 
-  // --- ACTION HANDLERS ---
-  const handleVerifyRequest = async () => {
+  const handleVerify = async (action) => {
+    if (action === 'Reject' && !rejectionReason.trim()) return alert("Please provide a reason.");
     setIsProcessing(true);
     try {
-      await api.put(`/requests/${selectedReq.request_id}/verify`, { action: 'Approve' });
+      await api.put(`/requests/${selectedReq.request_id}/verify`, { 
+        action, 
+        rejection_reason: action === 'Reject' ? rejectionReason : null 
+      });
       handleCloseAll();
       fetchRequests();
-    } catch (err) { alert("Verification failed."); } 
-    finally { setIsProcessing(false); }
-  };
-
-  const handleRejectRequest = async () => {
-    if (!rejectionReason.trim()) return alert("Provide a rejection reason.");
-    setIsProcessing(true);
-    try {
-      await api.put(`/requests/${selectedReq.request_id}/verify`, { action: 'Reject', rejection_reason: rejectionReason });
-      handleCloseAll();
-      fetchRequests();
-    } catch (err) { alert("Rejection failed."); } 
+    } catch (err) { alert("Processing failed."); } 
     finally { setIsProcessing(false); }
   };
 
   const handleProcessPayment = async () => {
     if (!paymentData.or_number || !paymentData.amount_received) return alert("Required fields missing.");
-    if (Number(paymentData.amount_received) < Number(selectedReq.base_fee)) return alert("Amount received is less than the fee.");
-    
     setIsProcessing(true);
     try {
       await api.put(`/payments/${selectedReq.request_id}`, {
@@ -115,192 +127,305 @@ export default function RequestsQueue() {
       });
       handleCloseAll();
       fetchRequests();
-    } catch (err) { alert(err.response?.data?.message || "Payment failed."); } 
+    } catch (err) { alert(err.response?.data?.message || "Payment encoding failed."); } 
     finally { setIsProcessing(false); }
+  };
+
+  const handlePrintPDF = async (id, refNo) => {
+    setIsProcessing(true);
+    try {
+      const res = await api.get(`/requests/${id}/generate-pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Official_${refNo}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) { 
+        alert("Print Error: Ensure the template and signature are vaulted in the Catalog."); 
+    } finally { setIsProcessing(false); }
+  };
+
+  const handleUpdateStatus = async (id, endpoint) => {
+    setIsProcessing(true);
+    try {
+      await api.put(`/requests/${id}/${endpoint}`);
+      fetchRequests();
+    } catch (err) { alert("Update failed."); } 
+    finally { setIsProcessing(false); }
+  };
+
+  const getStatusChip = (status) => {
+    const colors = { 
+        'Pending': { bg: '#fff7ed', text: '#c2410c', label: 'FOR REVIEW' },
+        'For Payment': { bg: '#eff6ff', text: '#1d4ed8', label: 'FOR PAYMENT' },
+        'Processing': { bg: '#f5f3ff', text: '#6d28d9', label: 'IN PROGRESS' },
+        'Ready for Pickup': { bg: '#ecfdf5', text: '#047857', label: 'READY' },
+        'Issued': { bg: '#f8fafc', text: '#64748b', label: 'ARCHIVED' },
+        'Rejected': { bg: '#fef2f2', text: '#b91c1c', label: 'REJECTED' }
+    };
+    const style = colors[status] || { bg: '#f1f5f9', text: '#475569', label: status.toUpperCase() };
+    return (
+        <Chip 
+            label={style.label} 
+            sx={{ bgcolor: style.bg, color: style.text, fontWeight: '900', fontSize: '0.65rem', borderRadius: '6px', height: 24 }} 
+        />
+    );
   };
 
   // Change Calculator
   const amountDue = selectedReq ? Number(selectedReq.base_fee) : 0;
   const amountReceived = Number(paymentData.amount_received) || 0;
   const changeDue = amountReceived >= amountDue ? amountReceived - amountDue : 0;
-  const isPaymentValid = paymentData.or_number && amountReceived >= amountDue;
 
-  const getStatusColor = (status) => {
-    const colors = { 'Pending': 'warning', 'For Payment': 'info', 'Processing': 'primary', 'Ready for Pickup': 'success', 'Rejected': 'error' };
-    return colors[status] || 'default';
-  };
-
-  if (loading) return <Box sx={{ mt: 10, textAlign: 'center' }}><CircularProgress /></Box>;
+  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 20 }}><CircularProgress /></Box>;
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 3, animation: 'fadeIn 0.5s' }}>
-      <Typography variant="h4" fontWeight="bold" gutterBottom>Master Requests & Collection Queue</Typography>
-      <Typography color="text.secondary" sx={{ mb: 4 }}>
-        Verify documents and encode payments from a single unified dashboard.
-      </Typography>
+    <Box sx={{ maxWidth: 1400, mx: 'auto', p: 3, animation: 'fadeIn 0.6s ease-out' }}>
+      
+      {/* HEADER SECTION */}
+      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={2} sx={{ mb: 4 }}>
+        <Box>
+            <Typography variant="h4" fontWeight="900" color="#0f172a" sx={{ letterSpacing: '-0.02em' }}>
+                Master Requests Queue
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+                Securely manage document lifecycle and collections for Barangay constituents.
+            </Typography>
+        </Box>
+        <Stack direction="row" spacing={2} sx={{ width: { xs: '100%', md: 'auto' } }}>
+            <TextField 
+                size="small" 
+                placeholder="Search Reference or Name..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                sx={{ bgcolor: 'white', borderRadius: 2, minWidth: 300 }}
+                InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon color="action" /></InputAdornment> }}
+            />
+            <Button variant="outlined" startIcon={<FilterListIcon />} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold' }}>Filter</Button>
+        </Stack>
+      </Stack>
 
-      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3 }}>
-        <Table sx={{ minWidth: 800 }}>
-          <TableHead sx={{ bgcolor: '#1e293b' }}>
+      {/* QUEUE TABLE */}
+      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+        <Table>
+          <TableHead sx={{ bgcolor: '#f8fafc' }}>
             <TableRow>
-              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Tracking No.</TableCell>
-              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Resident Name</TableCell>
-              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Document Type</TableCell>
-              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Fee</TableCell>
-              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Status</TableCell>
-              <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Action</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: '#475569' }}>TRACKING #</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: '#475569' }}>RESIDENT</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: '#475569' }}>DOCUMENT TYPE</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: '#475569' }}>FEE</TableCell>
+              <TableCell sx={{ fontWeight: 'bold', color: '#475569' }}>STATUS</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 'bold', color: '#475569' }}>ACTIONS</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {requests.map((row) => (
-              <TableRow key={row.request_id} hover>
-                <TableCell fontWeight="bold" color="primary.main">{row.reference_no}</TableCell>
-                <TableCell>{row.first_name} {row.last_name}</TableCell>
-                <TableCell>{row.type_name}</TableCell>
-                <TableCell>₱{row.base_fee}</TableCell>
-                <TableCell><Chip label={row.request_status} color={getStatusColor(row.request_status)} size="small" sx={{ fontWeight: 'bold' }} /></TableCell>
+            {filteredRequests.map((row, index) => (
+              <TableRow 
+                key={row.request_id} 
+                hover 
+                sx={{ 
+                    animation: `slideUp 0.4s ease-out forwards`, 
+                    animationDelay: `${index * 0.05}s`,
+                    opacity: 0,
+                    '&:last-child td': { border: 0 }
+                }}
+              >
+                <TableCell sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>{row.reference_no}</TableCell>
+                <TableCell>
+                    <Typography variant="body2" fontWeight="600">{row.first_name} {row.last_name}</Typography>
+                </TableCell>
+                <TableCell>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        <DescriptionIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                        <Typography variant="body2">{row.type_name}</Typography>
+                    </Stack>
+                </TableCell>
+                <TableCell>
+                    <Typography variant="body2" fontWeight="bold">₱{row.base_fee}</Typography>
+                </TableCell>
+                <TableCell>{getStatusChip(row.request_status)}</TableCell>
                 <TableCell align="center">
-                  {/* Dynamic Action Buttons based on Status */}
-                  {row.request_status === 'Pending' && (
-                    <Button variant="contained" color="warning" size="small" onClick={() => handleOpenReview(row)} sx={{ borderRadius: 2 }}>Review Request</Button>
-                  )}
-                  {row.request_status === 'For Payment' && (
-                    <Button variant="contained" color="success" size="small" onClick={() => handleOpenPayment(row)} startIcon={<PaymentsOutlinedIcon />} sx={{ borderRadius: 2 }}>Encode Payment</Button>
-                  )}
-                  {['Processing', 'Ready for Pickup', 'Issued', 'Rejected'].includes(row.request_status) && (
-                    <Button variant="outlined" size="small" onClick={() => handleOpenReview(row)} startIcon={<VisibilityIcon />} sx={{ borderRadius: 2 }}>View Details</Button>
-                  )}
+                  <Stack direction="row" spacing={1} justifyContent="center">
+                    
+                    {/* Role & Status Based Workflow */}
+                    {row.request_status === 'Pending' && isSecretaryOrAdmin && (
+                        <Button variant="contained" color="warning" size="small" onClick={() => handleOpenReview(row)} sx={{ borderRadius: '8px', fontWeight: 'bold', px: 2 }}>Review</Button>
+                    )}
+
+                    {row.request_status === 'For Payment' && isTreasurerOrAdmin && (
+                        <Button variant="contained" color="info" size="small" startIcon={<PaymentsOutlinedIcon />} onClick={() => { setSelectedReq(row); setPaymentModalOpen(true); }} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                            Collect
+                        </Button>
+                    )}
+
+                    {row.request_status === 'Processing' && isSecretaryOrAdmin && (
+                        <>
+                            <Button variant="contained" size="small" sx={{ bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' }, borderRadius: '8px', fontWeight: 'bold' }} startIcon={<PrintIcon />} onClick={() => handlePrintPDF(row.request_id, row.reference_no)} disabled={isProcessing}>
+                                Print
+                            </Button>
+                            <Button variant="contained" size="small" color="primary" startIcon={<TaskAltIcon />} onClick={() => handleUpdateStatus(row.request_id, 'ready')} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                                Mark Ready
+                            </Button>
+                        </>
+                    )}
+
+                    {row.request_status === 'Ready for Pickup' && isSecretaryOrAdmin && (
+                        <Button variant="contained" size="small" color="success" startIcon={<AssignmentTurnedInIcon />} onClick={() => handleUpdateStatus(row.request_id, 'issue')} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                            Final Issue
+                        </Button>
+                    )}
+
+                    <Tooltip title="View Full Details">
+                        <IconButton size="small" color="primary" onClick={() => handleOpenReview(row)} sx={{ border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                            <VisibilityIcon fontSize="small"/>
+                        </IconButton>
+                    </Tooltip>
+                  </Stack>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
+        {filteredRequests.length === 0 && (
+            <Box sx={{ p: 10, textAlign: 'center' }}>
+                <Typography color="text.secondary">No requests matching your criteria were found.</Typography>
+            </Box>
+        )}
       </TableContainer>
 
-      {/* 1. THE VERIFICATION & REVIEW MODAL */}
-      <Dialog open={reviewModalOpen} onClose={handleCloseAll} maxWidth="lg" fullWidth>
+      {/* --- REVIEW MODAL (Modern Layout) --- */}
+      <Dialog open={reviewModalOpen} onClose={handleCloseAll} maxWidth="lg" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>
         {selectedReq && (
           <>
-            <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white' }}>
-              <InfoOutlinedIcon sx={{ mr: 1, verticalAlign: 'middle' }}/> Reviewing: {selectedReq.reference_no}
+            <DialogTitle sx={{ bgcolor: theme.palette.primary.main, color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6" component="div" fontWeight="900">Request Audit: {selectedReq.reference_no}</Typography>
+                {getStatusChip(selectedReq.request_status)}
             </DialogTitle>
             <DialogContent dividers sx={{ p: 0 }}>
-              <Grid container sx={{ height: '70vh' }}>
-                <Grid item xs={12} md={4} sx={{ p: 3, borderRight: '1px solid #ddd', overflowY: 'auto' }}>
-                  
-                  <Typography variant="subtitle2" color="text.secondary">RESIDENT PROFILE</Typography>
-                  <Typography variant="h6" fontWeight="bold">{selectedReq.first_name} {selectedReq.last_name}</Typography>
-                  <Typography variant="body2" sx={{ mb: 3 }}>{selectedReq.address_street}</Typography>
-                  <Divider sx={{ my: 2 }} />
-                  
-                  {/* --- NEW: DOCUMENT & PAYMENT CLEARED INDICATOR --- */}
-                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>DOCUMENT & PURPOSE</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
-                    <Box>
-                      <Typography variant="body1" fontWeight="bold" color="primary.main">{selectedReq.type_name}</Typography>
-                      <Typography variant="caption" color="text.secondary" fontWeight="bold">Fee: ₱{selectedReq.base_fee}</Typography>
-                    </Box>
-                    {['Processing', 'Ready for Pickup', 'Issued'].includes(selectedReq.request_status) && (
-                      <Chip 
-                        label="Payment Cleared" 
-                        color="success" 
-                        size="small" 
-                        icon={<CheckCircleIcon />} 
-                        sx={{ fontWeight: 'bold' }} 
-                      />
-                    )}
-                  </Box>
-                  <Typography variant="body2" sx={{ mt: 1.5, p: 1.5, bgcolor: '#f5f5f5', borderRadius: 2, border: '1px solid #e0e0e0' }}>
-                    {selectedReq.purpose}
-                  </Typography>
+                <Grid container sx={{ height: '70vh' }}>
+                    {/* Details Panel */}
+                    <Grid size={{ xs: 12, md: 4 }} sx={{ p: 4, borderRight: '1px solid #e2e8f0', overflowY: 'auto' }}>
+                        <Typography variant="overline" color="text.secondary" fontWeight="bold">RESIDENT INFORMATION</Typography>
+                        <Typography variant="h5" fontWeight="900" color="#0f172a" sx={{ mt: 1 }}>{selectedReq.first_name} {selectedReq.last_name}</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>{selectedReq.address_street}</Typography>
+                        
+                        <Divider sx={{ my: 3 }} />
+                        
+                        <Typography variant="overline" color="text.secondary" fontWeight="bold">PURPOSE OF REQUEST</Typography>
+                        <Box sx={{ mt: 1, p: 2, bgcolor: '#f8fafc', borderRadius: 3, border: '1px solid #e2e8f0' }}>
+                            <Typography variant="body2" sx={{ lineHeight: 1.6 }}>{selectedReq.purpose}</Typography>
+                        </Box>
 
-                  <Divider sx={{ my: 3 }} />
-                  <Typography variant="subtitle2" color="text.secondary">ATTACHMENTS</Typography>
-                  <Stack spacing={1.5} sx={{ mt: 1 }}>
-                    <Button variant="outlined" startIcon={<FilePresentIcon />} onClick={() => handlePreview(selectedReq.id_proof_image)}>Official ID Proof</Button>
-                    {extraFiles.map((file, idx) => (
-                      <Button key={idx} variant="text" color="secondary" startIcon={<FilePresentIcon />} onClick={() => handlePreview(file)} sx={{ border: '1px dashed' }}>Requirement {idx + 1}</Button>
-                    ))}
-                  </Stack>
+                        <Typography variant="overline" color="text.secondary" fontWeight="bold" sx={{ mt: 4, display: 'block' }}>SECURE ATTACHMENTS</Typography>
+                        <Stack spacing={1.5} sx={{ mt: 1.5 }}>
+                            <Button variant="outlined" startIcon={<FilePresentIcon />} onClick={() => handlePreview(selectedReq.id_proof_image)} sx={{ borderRadius: 2, justifyContent: 'flex-start', py: 1 }}>Official ID Proof</Button>
+                            {extraFiles.map((f, i) => (
+                                <Button key={i} variant="text" color="secondary" startIcon={<FilePresentIcon />} onClick={() => handlePreview(f)} sx={{ justifyContent: 'flex-start', borderRadius: 2, border: '1px dashed' }}>
+                                    Requirement {i+1}
+                                </Button>
+                            ))}
+                        </Stack>
+                    </Grid>
+                    {/* Preview Panel */}
+                    <Grid size={{ xs: 12, md: 8 }} sx={{ bgcolor: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                        {!previewUrl ? (
+                            <Stack spacing={2} alignItems="center">
+                                <InfoOutlinedIcon sx={{ fontSize: 60, color: 'white', opacity: 0.1 }} />
+                                <Typography color="white" sx={{ opacity: 0.5 }}>Select a file from the left to verify</Typography>
+                            </Stack>
+                        ) : (
+                         previewType === 'image' ? (
+                             <img src={previewUrl} style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' }} alt="Preview" />
+                         ) : (
+                             <iframe src={previewUrl} width="100%" height="100%" title="PDF Preview" style={{ border: 'none' }} />
+                         )
+                        )}
+                    </Grid>
                 </Grid>
-
-                <Grid item xs={12} md={8} sx={{ bgcolor: '#2c3e50', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {!previewUrl ? <Typography color="#95a5a6">Select a document to preview</Typography> : 
-                   previewType === 'image' ? <img src={previewUrl} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : 
-                   <iframe src={previewUrl} width="100%" height="100%" style={{ border: 'none' }} />}
-                </Grid>
-              </Grid>
             </DialogContent>
-            <DialogActions sx={{ p: 2, bgcolor: '#fafafa' }}>
-              <Button onClick={handleCloseAll} color="inherit" sx={{ fontWeight: 'bold' }}>Close</Button>
-              {selectedReq.request_status === 'Pending' && (
-                <>
-                  <Button variant="outlined" color="error" onClick={() => setRejectDialogOpen(true)} disabled={isProcessing}>Reject Request</Button>
-                  <Button variant="contained" color="success" onClick={handleVerifyRequest} disabled={isProcessing}>Verify & Approve</Button>
-                </>
-              )}
+            <DialogActions sx={{ p: 3, bgcolor: '#f8fafc' }}>
+                <Button onClick={handleCloseAll} color="inherit" sx={{ fontWeight: 'bold' }}>Close Window</Button>
+                {selectedReq.request_status === 'Pending' && isSecretaryOrAdmin && (
+                    <>
+                        <Button color="error" startIcon={<HighlightOffIcon />} onClick={() => setRejectDialogOpen(true)} sx={{ fontWeight: 'bold' }}>Reject</Button>
+                        <Button variant="contained" color="success" onClick={() => handleVerify('Approve')} sx={{ fontWeight: 'bold', px: 4, borderRadius: 2 }}>Verify & Approve</Button>
+                    </>
+                )}
             </DialogActions>
           </>
         )}
       </Dialog>
 
-      {/* 2. THE REJECTION SUB-MODAL */}
-      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)}>
-        <DialogTitle sx={{ fontWeight: 'bold' }}>Reason for Rejection</DialogTitle>
-        <DialogContent dividers>
-          <TextField fullWidth multiline rows={3} placeholder="Please provide the exact reason for rejecting this document..." value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} />
+      {/* --- REJECTION DIALOG --- */}
+      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} PaperProps={{ sx: { borderRadius: 4 } }}>
+        <DialogTitle sx={{ fontWeight: 'bold' }}>Rejection Reason</DialogTitle>
+        <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>This will be sent to the resident's dashboard.</Typography>
+            <TextField fullWidth multiline rows={3} value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder="e.g. ID is expired or blurry, invalid purpose..." variant="filled" sx={{ borderRadius: 2 }} />
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" color="error" onClick={handleRejectRequest} disabled={isProcessing}>Confirm Rejection</Button>
+            <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
+            <Button variant="contained" color="error" onClick={() => handleVerify('Reject')}>Confirm Rejection</Button>
         </DialogActions>
       </Dialog>
 
-      {/* 3. THE PAYMENT & CHANGE ENCODING MODAL */}
-      <Dialog open={paymentModalOpen} onClose={handleCloseAll} maxWidth="xs" fullWidth>
+      {/* --- PAYMENT MODAL --- */}
+      <Dialog open={paymentModalOpen} onClose={handleCloseAll} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>
         {selectedReq && (
-          <>
-            <DialogTitle sx={{ bgcolor: 'success.main', color: 'white', fontWeight: 'bold' }}>
-              <PaymentsOutlinedIcon sx={{ mr: 1, verticalAlign: 'middle' }}/> Process Payment
-            </DialogTitle>
-            <DialogContent dividers>
-              <Box sx={{ textAlign: 'center', mb: 3 }}>
-                <Typography variant="caption" color="text.secondary" display="block">Total Amount Due</Typography>
-                <Typography variant="h3" fontWeight="bold" color="error.main">₱{amountDue.toFixed(2)}</Typography>
-              </Box>
-
-              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>1. Official Receipt (OR) Number</Typography>
-              <TextField
-                fullWidth variant="outlined" placeholder="e.g. OR-998273" sx={{ mb: 3 }}
-                value={paymentData.or_number} onChange={(e) => setPaymentData({ ...paymentData, or_number: e.target.value })}
-                InputProps={{ startAdornment: <InputAdornment position="start"><NumbersOutlinedIcon color="primary" /></InputAdornment> }}
-              />
-
-              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>2. Cash Amount Received</Typography>
-              <TextField
-                fullWidth type="number" variant="outlined" sx={{ mb: 3 }}
-                value={paymentData.amount_received} onChange={(e) => setPaymentData({ ...paymentData, amount_received: e.target.value })}
-                InputProps={{ startAdornment: <InputAdornment position="start">₱</InputAdornment> }}
-              />
-
-              <Paper elevation={0} sx={{ p: 2, bgcolor: changeDue > 0 ? '#e8f5e9' : '#f5f5f5', border: '1px solid', borderColor: changeDue > 0 ? 'success.main' : 'divider', borderRadius: 2 }}>
-                <Typography variant="subtitle2" color="text.secondary" display="flex" justifyContent="space-between" alignItems="center">
-                  Change to give Resident:
-                  <Typography component="span" variant="h6" fontWeight="bold" color={changeDue > 0 ? "success.main" : "text.primary"}>
-                    ₱{changeDue.toFixed(2)}
-                  </Typography>
-                </Typography>
-              </Paper>
-            </DialogContent>
-            <DialogActions sx={{ p: 2, bgcolor: '#fafafa' }}>
-              <Button onClick={handleCloseAll} color="inherit" sx={{ fontWeight: 'bold' }}>Cancel</Button>
-              <Button variant="contained" color="success" onClick={handleProcessPayment} disabled={!isPaymentValid || isProcessing} sx={{ fontWeight: 'bold' }}>
-                {isProcessing ? 'Processing...' : 'Confirm Payment'}
-              </Button>
-            </DialogActions>
-          </>
+            <>
+                <DialogTitle sx={{ bgcolor: theme.palette.success.main, color: 'white', textAlign: 'center', fontWeight: '900' }}>
+                    ENCODE COLLECTION
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Box sx={{ textAlign: 'center', mb: 4, mt: 2 }}>
+                        <Typography variant="caption" color="text.secondary" fontWeight="bold">TOTAL AMOUNT DUE</Typography>
+                        <Typography variant="h2" fontWeight="900" color="#b91c1c">₱{selectedReq.base_fee}</Typography>
+                    </Box>
+                    <Stack spacing={3}>
+                        <TextField 
+                            label="OR Number" fullWidth required autoFocus
+                            value={paymentData.or_number} onChange={(e) => setPaymentData({...paymentData, or_number: e.target.value})} 
+                            InputProps={{ startAdornment: <InputAdornment position="start"><NumbersOutlinedIcon color="primary"/></InputAdornment> }} 
+                        />
+                        <TextField 
+                            label="Amount Received" type="number" fullWidth required 
+                            value={paymentData.amount_received} onChange={(e) => setPaymentData({...paymentData, amount_received: e.target.value})} 
+                            InputProps={{ startAdornment: <InputAdornment position="start">₱</InputAdornment> }} 
+                        />
+                        
+                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: changeDue >= 0 ? '#f0fdf4' : '#fef2f2', textAlign: 'center', border: '1px solid', borderColor: changeDue >= 0 ? '#bcf0da' : '#fecaca', borderRadius: 3 }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight="bold">CHANGE TO RESIDENT</Typography>
+                            <Typography variant="h4" fontWeight="900" color={changeDue >= 0 ? "success.main" : "error.main"}>₱{changeDue.toFixed(2)}</Typography>
+                        </Paper>
+                    </Stack>
+                </DialogContent>
+                <DialogActions sx={{ p: 3 }}>
+                    <Button onClick={handleCloseAll} color="inherit">Cancel</Button>
+                    <Button 
+                        variant="contained" color="success" size="large" fullWidth
+                        onClick={handleProcessPayment} 
+                        disabled={changeDue < 0 || !paymentData.or_number || isProcessing}
+                        sx={{ fontWeight: 'bold', borderRadius: 3 }}
+                    >
+                        Confirm Payment & Process
+                    </Button>
+                </DialogActions>
+            </>
         )}
       </Dialog>
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </Box>
   );
 }
