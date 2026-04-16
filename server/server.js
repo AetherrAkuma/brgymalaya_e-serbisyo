@@ -470,7 +470,7 @@ app.put('/api/v1/admin/document-types/:id/layout', verifyJWT, roleGuard(['Captai
 // ==========================================
 
 // Endpoint 38: Get All Announcements (Admin View)
-app.get('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.get('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         const query = `
             SELECT a.*, o.full_name as posted_by_name 
@@ -487,7 +487,7 @@ app.get('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin',
 
 // Endpoint 39: Create Announcement
 // Endpoint 39: Create Announcement (Supports native image_path)
-app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Captain', 'Secretary', 'Admin']), async (req, res) => {
+app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary']), async (req, res) => {
     try {
         const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path } = req.body;
         const posted_by = req.user.id;
@@ -510,7 +510,7 @@ app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Captai
 });
 
 // Endpoint 40: Update Announcement (Supports native image_path)
-app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Captain', 'Secretary', 'Admin']), async (req, res) => {
+app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary']), async (req, res) => {
     try {
         const { id } = req.params;
         const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path } = req.body;
@@ -540,7 +540,7 @@ app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Cap
 });
 
 // Endpoint 41: Delete Announcement
-app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Admin']), async (req, res) => {
     try {
         const { id } = req.params;
         await db.query('DELETE FROM tbl_announcements WHERE announcement_id = ?', [id]);
@@ -958,6 +958,25 @@ app.get('/api/v1/admin/profile', verifyJWT, async (req, res) => {
         );
         if (user.length === 0) return res.status(404).json({ error: 'User not found' });
         res.status(200).json({ status: 'success', data: user[0] });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 42b: Live Security Check (Database Triggered)
+app.get('/api/v1/admin/profile/security-check', verifyJWT, async (req, res) => {
+    try {
+        const [user] = await db.query(
+            'SELECT require_password_change, role FROM tbl_barangayofficials WHERE user_id = ?',
+            [req.user.id]
+        );
+        if (user.length === 0) return res.status(404).json({ error: 'Official not found' });
+        
+        res.status(200).json({ 
+            status: 'success', 
+            mustChange: user[0].require_password_change === 1,
+            role: user[0].role
+        });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
@@ -1532,8 +1551,8 @@ app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain'])
 
         const insertQuery = `
             INSERT INTO tbl_BarangayOfficials 
-            (official_id, full_name, email_official, username, password_hash, role, account_status)
-            VALUES (?, ?, ?, ?, ?, ?, 'Active')
+            (official_id, full_name, email_official, username, password_hash, role, account_status, require_password_change)
+            VALUES (?, ?, ?, ?, ?, ?, 'Active', 1)
         `;
 
         const [result] = await db.query(insertQuery, [

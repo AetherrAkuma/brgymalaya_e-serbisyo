@@ -57,7 +57,7 @@ export default function AdminLayout() {
       text: 'Manage Residents', 
       icon: <PeopleAltIcon />, 
       path: '/admin/residents', 
-      visible: ['Super Admin', 'Captain', 'Secretary'].includes(userRole) 
+      visible: ['Super Admin', 'Captain', 'Secretary', 'Admin'].includes(userRole) 
     },
     { 
       text: 'Payments Desk', 
@@ -69,7 +69,7 @@ export default function AdminLayout() {
       text: 'Broadcast Center', 
       icon: <CampaignIcon />, 
       path: '/admin/announcements', 
-      visible: ['Super Admin', 'Captain', 'Secretary'].includes(userRole) 
+      visible: ['Super Admin', 'Captain', 'Secretary', 'Admin'].includes(userRole) 
     },
     { 
       text: 'Service Catalog', 

@@ -16,15 +16,20 @@ export default function ForcePasswordChange() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // FIX: We bypass backend flags and enforce this directly on the frontend.
-    // If the official hasn't secured their password in this browser, force the prompt.
-    const isSecured = localStorage.getItem('passwordSecured');
-    const role = localStorage.getItem('role');
+    const checkSecurity = async () => {
+      try {
+        const response = await api.get('/admin/profile/security-check');
+        // Only prompt if the database says 'mustChange' is true
+        // and ignore it for 'Resident' role (though Residents usually use different layouts)
+        if (response.data.mustChange && response.data.role !== 'Resident') {
+          setOpen(true);
+        }
+      } catch (err) {
+        console.error("Security check failed:", err);
+      }
+    };
 
-    // Skip for Super Admin, enforce for Captain, Secretary, and Treasurer
-    if (role && role !== 'Super Admin' && isSecured !== 'true') {
-      setOpen(true);
-    }
+    checkSecurity();
   }, []);
 
   const handleLogout = () => {
@@ -57,8 +62,7 @@ export default function ForcePasswordChange() {
         new_password: passwords.new 
       });
 
-      // Mark as secured locally so it never pops up again for this user
-      localStorage.setItem('passwordSecured', 'true');
+      // Success message
       setError('Success');
       
       setTimeout(() => {

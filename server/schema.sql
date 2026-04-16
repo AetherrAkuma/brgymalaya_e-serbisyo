@@ -9,8 +9,9 @@ CREATE TABLE IF NOT EXISTS tbl_BarangayOfficials (
     email_official VARCHAR(255) UNIQUE NOT NULL,
     username VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL, -- SHA256 Hash
-    role ENUM('Super Admin', 'Secretary', 'Treasurer', 'Captain') NOT NULL,
+    role ENUM('Super Admin', 'Admin', 'Secretary', 'Treasurer', 'Captain') NOT NULL,
     account_status ENUM('Active', 'Inactive', 'Suspended') DEFAULT 'Active',
+    require_password_change TINYINT(1) DEFAULT 1,
     auth_token VARCHAR(255),
     last_login DATETIME
 );

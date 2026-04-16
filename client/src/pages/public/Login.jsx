@@ -54,14 +54,6 @@ export default function Login() {
         localStorage.setItem('role', response.data.role);
         localStorage.setItem('first_name', response.data.first_name); 
         
-        // --- SECURE PASSWORD FLAG ---
-        // Catches the flag sent by server.js for newly created officials
-        if (response.data.mustChange) {
-          localStorage.setItem('mustChange', 'true');
-        } else {
-          localStorage.setItem('mustChange', 'false');
-        }
-        
         if (response.data.role === 'Resident') {
           navigate('/resident/dashboard');
         } else {
