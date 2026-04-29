@@ -30,7 +30,6 @@ export default function Login() {
     setIsLoginView(!isLoginView);
     setError('');
     setSuccess('');
-    // Scroll to top of form on toggle
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -125,7 +124,7 @@ export default function Login() {
       {/* --- RIGHT SIDE: THE SCROLLABLE FORM CONTAINER --- */}
       <Box sx={{ 
         flex: 1, 
-        ml: { xs: 0, md: '50%', lg: '60%' }, // Offset for the fixed blue side
+        ml: { xs: 0, md: '50%', lg: '60%' }, 
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'center', 

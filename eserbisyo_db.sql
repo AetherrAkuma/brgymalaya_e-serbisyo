@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Mar 26, 2026 at 04:14 PM
+-- Generation Time: Apr 16, 2026 at 02:45 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -46,7 +46,8 @@ CREATE TABLE `tbl_announcements` (
 
 INSERT INTO `tbl_announcements` (`announcement_id`, `title`, `target_audience`, `content_body`, `image_path`, `is_pinned`, `status`, `date_posted`, `expiry_date`, `posted_by`) VALUES
 (1, 'Road Clearing Operations', 'All', 'Please be advised that road clearing will start on Monday.', NULL, 1, 'Published', '2026-02-24 17:24:55', '2026-03-03 17:24:55', NULL),
-(2, 'Free Medical Mission', 'All', 'Join us at the covered court this weekend for free checkups!', NULL, 0, 'Published', '2026-02-24 17:24:55', '2026-02-27 17:24:55', NULL);
+(2, 'Free Medical Mission', 'All', 'Join us at the covered court this weekend for free checkups!', NULL, 0, 'Published', '2026-02-24 17:24:55', '2026-02-27 17:24:55', NULL),
+(4, 'Test', 'All', 'Testing Malunggay Pandesal|||LINK|||google.com', NULL, 0, 'Published', '2026-03-27 17:44:06', NULL, 3);
 
 -- --------------------------------------------------------
 
@@ -76,7 +77,13 @@ INSERT INTO `tbl_auditlogs` (`log_id`, `user_id`, `table_affected`, `record_id`,
 (2, 1, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Active\"}', '{\"account_status\":\"Inactive\"}', '2026-02-24 20:38:13', '::1', 'Official'),
 (3, 1, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Inactive\"}', '{\"account_status\":\"Suspended\"}', '2026-02-24 20:38:16', '::1', 'Official'),
 (4, 1, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Suspended\"}', '{\"account_status\":\"Active\"}', '2026-02-24 20:38:18', '::1', 'Official'),
-(5, 1, 'tbl_BarangayOfficials', 3, 'CREATE', NULL, '{\"official_id\":\"CAP-001\",\"username\":\"marias\",\"role\":\"Captain\"}', '2026-03-22 20:43:44', '::1', 'Official');
+(5, 1, 'tbl_BarangayOfficials', 3, 'CREATE', NULL, '{\"official_id\":\"CAP-001\",\"username\":\"marias\",\"role\":\"Captain\"}', '2026-03-22 20:43:44', '::1', 'Official'),
+(6, 3, 'Pending', 0, 'STATUS_CHANGE', '{\"status\":\"Admin Approveed request REQ-20260327-2283\"}', '{}', '2026-03-27 16:19:29', '0.0.0.0', ''),
+(7, 3, 'tbl_Payments', 100, 'PAYMENT_ENCODED', NULL, '{\"amount\":\"OR-1\",\"or_number\":\"Payment received for REQ-20260327-2283\",\"encoded_at\":\"2026-03-27T08:42:16.961Z\"}', '2026-03-27 16:42:16', '0.0.0.0', ''),
+(8, 3, 'tbl_Payments', 100, 'PAYMENT_ENCODED', NULL, '{\"amount\":\"OR1\",\"or_number\":\"Payment received for REQ-20260327-2283\",\"encoded_at\":\"2026-03-27T08:50:15.196Z\"}', '2026-03-27 16:50:15', '0.0.0.0', ''),
+(9, 3, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Active\"}', '{\"account_status\":\"Inactive\"}', '2026-04-16 16:26:03', '::1', 'Official'),
+(10, 3, 'tbl_BarangayOfficials', 2, 'STATUS_CHANGE', '{\"account_status\":\"Inactive\"}', '{\"account_status\":\"Active\"}', '2026-04-16 16:26:05', '::1', 'Official'),
+(11, 3, 'tbl_BarangayOfficials', 4, 'CREATE', NULL, '{\"official_id\":\"wehufiouawebgfi\",\"username\":\"tester\",\"role\":\"Admin\"}', '2026-04-16 16:54:05', '::1', 'Official');
 
 -- --------------------------------------------------------
 
@@ -91,8 +98,9 @@ CREATE TABLE `tbl_barangayofficials` (
   `email_official` varchar(255) NOT NULL,
   `username` varchar(100) NOT NULL,
   `password_hash` varchar(255) NOT NULL,
-  `role` enum('Super Admin','Secretary','Treasurer','Captain') NOT NULL,
+  `role` enum('Super Admin','Admin','Secretary','Treasurer','Captain') NOT NULL,
   `account_status` enum('Active','Inactive','Suspended') DEFAULT 'Active',
+  `require_password_change` tinyint(1) DEFAULT 1,
   `auth_token` varchar(255) DEFAULT NULL,
   `last_login` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -101,10 +109,11 @@ CREATE TABLE `tbl_barangayofficials` (
 -- Dumping data for table `tbl_barangayofficials`
 --
 
-INSERT INTO `tbl_barangayofficials` (`user_id`, `official_id`, `full_name`, `email_official`, `username`, `password_hash`, `role`, `account_status`, `auth_token`, `last_login`) VALUES
-(1, 'SA-001', 'System Administrator', 'admin@eserbisyo.com', 'superadmin', '0eeaa9fdda267f5bf6f0b4fe2fabb4133c1b8689d02832052fb90d129ea3093f', 'Super Admin', 'Active', NULL, '2026-03-22 20:43:18'),
-(2, 'SEC-001', 'John Doe', 'john@brgy.gov.ph', 'johndoe', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Secretary', 'Active', NULL, NULL),
-(3, 'CAP-001', 'Maria Santos', 'admin1@brgy.gov.ph', 'marias', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', 'Captain', 'Active', NULL, '2026-03-22 20:51:35');
+INSERT INTO `tbl_barangayofficials` (`user_id`, `official_id`, `full_name`, `email_official`, `username`, `password_hash`, `role`, `account_status`, `require_password_change`, `auth_token`, `last_login`) VALUES
+(1, 'SA-001', 'System Administrator', 'admin@eserbisyo.com', 'superadmin', '0eeaa9fdda267f5bf6f0b4fe2fabb4133c1b8689d02832052fb90d129ea3093f', 'Super Admin', 'Active', 0, NULL, '2026-03-22 20:43:18'),
+(2, 'SEC-001', 'John Doe', 'john@brgy.gov.ph', 'johndoe', 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f', 'Secretary', 'Active', 1, NULL, NULL),
+(3, 'CAP-001', 'Maria Santos', 'admin1@brgy.gov.ph', 'marias', 'ef797c8118f02dfb649607dd5d3f8c7623048c9c063d532cc95c5ed7a898a64f', 'Captain', 'Active', 0, NULL, '2026-04-16 17:25:28'),
+(4, 'wehufiouawebgfi', 'Meow', 'test1@official.com', 'tester', '24134886902804bd7753fe5d693574553fac08acc67b2f2f196428855fd78740', 'Admin', 'Active', 1, NULL, '2026-04-16 17:19:45');
 
 -- --------------------------------------------------------
 
@@ -150,7 +159,7 @@ CREATE TABLE `tbl_documenttypes` (
 --
 
 INSERT INTO `tbl_documenttypes` (`doc_type_id`, `type_name`, `description`, `base_fee`, `requirements`, `template_file`, `layout_config`, `paper_size`, `validity_days`, `is_available`, `updated_by`, `updated_at`) VALUES
-(1, 'Barangay Clearance', 'Used for employment and general purposes.', 50.00, 'Valid ID, 1x1 Picture', 'template_1_1771936527884-61628698.png.enc', NULL, 'A4', 180, 1, 1, '2026-02-24 20:35:27'),
+(1, 'Barangay Clearance', 'Used for employment and general purposes.', 50.00, 'Valid ID, 1x1 Picture', 'template_1_1776335114347-327187567.png.enc', '{\"name\":{\"x\":255,\"y\":324},\"purpose\":{\"x\":251,\"y\":490},\"signature\":{\"x\":388,\"y\":558},\"qr\":{\"x\":426,\"y\":748},\"reference\":{\"x\":50,\"y\":800}}', 'A4', 180, 1, 3, '2026-04-16 20:44:06'),
 (2, 'Certificate of Indigency', 'Used for scholarship and financial aid. Free of charge.', 0.00, 'Proof of Income or Valid ID', NULL, NULL, 'A4', 180, 1, NULL, '2026-02-24 17:24:55'),
 (3, 'Business Permit', NULL, 150.00, 'DTI Registration, Lease Contract', NULL, NULL, 'A4', 180, 1, 1, '2026-02-24 17:36:45');
 
@@ -192,13 +201,6 @@ CREATE TABLE `tbl_payments` (
   `audit_hash` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `tbl_payments`
---
-
-INSERT INTO `tbl_payments` (`payment_id`, `request_id`, `amount_paid`, `or_number`, `payment_date`, `treasurer_id`, `payment_status`, `payor_name`, `receipt_copy`, `audit_hash`) VALUES
-(7, 1, 50.00, 'OR-12345', '2026-02-24 19:01:23', 1, 'Paid', 'Juan Dela Cruz', NULL, NULL);
-
 -- --------------------------------------------------------
 
 --
@@ -224,7 +226,7 @@ CREATE TABLE `tbl_requests` (
 --
 
 INSERT INTO `tbl_requests` (`request_id`, `resident_id`, `doc_type_id`, `reference_no`, `purpose`, `rejection_reason`, `request_status`, `date_requested`, `qr_code_string`, `pickup_date`, `processed_by`) VALUES
-(1, 1, 1, 'REQ-20260224-7448', 'Employment', NULL, 'Processing', '2026-02-24 17:56:04', 'f6cc53e3dd8a5e4ff63bb9849acbf8e0aa90f0d27bdc2c52feef5be7988fa5c4', NULL, 1);
+(4, 2, 1, 'REQ-20260327-2283', 'ada', NULL, 'Processing', '2026-03-27 16:09:38', '30c62a52a8eaebb07baaeda11264b66996245ef4581e1be75023bafd1669e179', NULL, 3);
 
 -- --------------------------------------------------------
 
@@ -253,9 +255,9 @@ CREATE TABLE `tbl_residents` (
 
 INSERT INTO `tbl_residents` (`resident_id`, `first_name`, `middle_name`, `last_name`, `date_of_birth`, `civil_status`, `address_street`, `email_address`, `contact_number`, `password_hash`, `id_proof_image`, `account_status`) VALUES
 (1, 'test', NULL, 'testt', '2020-01-01', 'Single', 'kahit saan', 'test@gmail.com', '7d5390daa3c63194f01294d0607e7d67:32ff3ce0a21aa7d92432be3f79acecf78c4d5e16f1f52f16c2977d568e02762d', 'ecd71870d1963316a97e3ac3408c9835ad8cf0f3c1bc703527c30265534f75ae', 'secure_dummy_id_12345.enc', 'Active'),
-(2, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test1@gmail.com', 'c0785a7e07b7201d3f11e09503f2f152:15a97367daa8eb25ed9a10f5035960f0', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Active'),
+(2, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test1@gmail.com', 'c0785a7e07b7201d3f11e09503f2f152:15a97367daa8eb25ed9a10f5035960f0', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', 'idproof_2_1774598978782-968239353.jpg.enc', 'Active'),
 (3, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test3@gmail.com', 'e0d5889f2e4dd7018712a7b5b889b1a0:61568b82807534388fc6fd800b77729c', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Pending'),
-(4, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test4@gmail.com', '7bf3400acf0a391606543e688661f4d4:dca9773f3fdf091e8d5faa12e3deb16d', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Active'),
+(4, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test4@gmail.com', '7bf3400acf0a391606543e688661f4d4:dca9773f3fdf091e8d5faa12e3deb16d', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Pending'),
 (5, 'Aether', 'M.', 'Akuma', '2026-03-22', 'Single', 'Road 13 Pasong Malapad G.S.I.S. Hills Talipapa Caloocan City', 'test5@gmail.com', 'b65dd9112d85dd3f2a27042574c31009:f3149400f3288446ed6e68af006c3fb1', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Pending'),
 (6, 'Aether', NULL, 'Akuma', '1985-01-01', 'Single', 'asfdasfgawrgawda', 'test67@gmail.com', '999cfabc96ef1ef876318193c3e50ba2:9b915bab412587c257e4f308ea113d7d', '5994471abb01112afcc18159f6cc74b4f511b99806da59b3caf5a9c173cacfc5', NULL, 'Pending');
 
@@ -374,19 +376,19 @@ ALTER TABLE `tbl_systemsettings`
 -- AUTO_INCREMENT for table `tbl_announcements`
 --
 ALTER TABLE `tbl_announcements`
-  MODIFY `announcement_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `announcement_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `tbl_auditlogs`
 --
 ALTER TABLE `tbl_auditlogs`
-  MODIFY `log_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `log_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `tbl_barangayofficials`
 --
 ALTER TABLE `tbl_barangayofficials`
-  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `tbl_digitalsignatures`
@@ -416,7 +418,7 @@ ALTER TABLE `tbl_payments`
 -- AUTO_INCREMENT for table `tbl_requests`
 --
 ALTER TABLE `tbl_requests`
-  MODIFY `request_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `request_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `tbl_residents`
