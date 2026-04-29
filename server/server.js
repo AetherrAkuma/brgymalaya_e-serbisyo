@@ -22,7 +22,12 @@ const { logAction, logLogin, logStatusChange, logDocumentPrint, logPayment } = r
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// CORS Configuration - Allow all origins for development/testing
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Safety Net Middleware for JSON Parsing Errors
@@ -36,8 +41,6 @@ app.use((err, req, res, next) => {
 });
 
 app.use(sqlSanitizer);
-
-app.use(cors({ origin: 'http://localhost:5173' }));
 
 // ==========================================
 // PHASE 1.1: DATABASE ENDPOINTS
