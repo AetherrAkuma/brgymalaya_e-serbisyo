@@ -248,24 +248,23 @@ To ensure all devices on the Barangay network automatically query your Technitiu
 
 ## ⚖️ Clustered Load Balancing Setup (Caddy & PM2)
 
-This section provides the configuration instructions for load balancing multiple Express backend processes on your single host machine. This distributes application processing across all available CPU cores, optimizing system performance.
+This section provides configuration instructions for load balancing multiple Express backend processes on a single server host. This utilizes all available CPU cores, maximizes system throughput, and protects against downtime.
 
 ### 📋 Architectural Overview
-1. **PM2** runs and manages multiple instances of the Express app (`server.js`), utilizing the native Node.js cluster module.
-2. The processes listen on different ports (e.g., ports `3000` and `3001`).
-3. **Caddy** receives all traffic on `api.brgy143.gov.ph` and balances requests across the active ports using a Round Robin strategy.
-4. If one of the backend processes crashes or hangs, Caddy automatically routes traffic to the remaining healthy processes.
+1. **PM2** manages multiple instances of the Express app (`server.js`) on ports `3000` and `3001`.
+2. **Caddy** intercepts public/local traffic and balances requests across active instances using a Round Robin policy.
+3. If one instance crashes or is taken down for database maintenance, Caddy transparently shifts traffic to the other instance.
 
 ---
 
-### 📦 Step 1: Install and Configure PM2
-Run the following in the backend server machine to handle process management:
+### 📦 Step 1: Process Management (PM2 Setup)
+PM2 ensures your Node backend instances run continuously and restart automatically on system crashes.
 
-1. Install PM2 globally:
+1. Install PM2 globally on the host machine:
    ```bash
    npm install -g pm2
    ```
-2. Create a file named `ecosystem.config.js` in your `server` directory:
+2. Save this configurations as `ecosystem.config.js` in the `server` folder:
    ```javascript
    module.exports = {
      apps: [
@@ -274,7 +273,7 @@ Run the following in the backend server machine to handle process management:
          script: "./server.js",
          env: {
            PORT: "3000",
-           RUN_CRON: "true" // Only instance on port 3000 runs scheduled backups
+           RUN_CRON: "true" // Only Port 3000 runs the daily midnight backup job
          }
        },
        {
@@ -282,17 +281,17 @@ Run the following in the backend server machine to handle process management:
          script: "./server.js",
          env: {
            PORT: "3001",
-           RUN_CRON: "false" // Port 3001 instance will run with backups disabled to avoid conflicts
+           RUN_CRON: "false" // Disabled on Port 3001 to prevent concurrent file locks
          }
        }
      ]
    }
    ```
-3. Start the servers with PM2:
+3. Start the application:
    ```bash
    pm2 start ecosystem.config.js
    ```
-4. Save the PM2 list and configure it to run on system startup:
+4. Save the configuration to restore on system startup:
    ```bash
    pm2 save
    pm2 startup
@@ -300,22 +299,21 @@ Run the following in the backend server machine to handle process management:
 
 ---
 
-### 🔒 Step 2: Configure Caddy Load Balancing
-Update the `Caddyfile` located in your project root to balance incoming API traffic across ports `3000` and `3001`:
+### 🔒 Step 2: SSL/TLS & Load Balancing (Caddyfile Configurations)
 
+Depending on your current staging or deployment environment, select the appropriate `Caddyfile` configuration:
+
+#### Option A: Local Domain Setup (Staging at Barangay Hall)
+Uses **`tls internal`** to let Caddy act as a local Certificate Authority, issuing self-signed certificates for your fake/local domains:
 ```caddyfile
 portal.brgy143.gov.ph {
-    # Reverse proxy to local Vite development server or static build
     reverse_proxy 127.0.0.1:5173
     tls internal
 }
 
 api.brgy143.gov.ph {
-    # Load balance API traffic across active Node processes
     reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
         lb_policy round_robin
-        
-        # Continuous active health checking using the lightweight health probe
         health_uri /api/v1/health
         health_interval 5s
         health_timeout 2s
@@ -324,29 +322,75 @@ api.brgy143.gov.ph {
 }
 ```
 
+#### Option B: Public Staging (Zero-Touch Let's Encrypt / ZeroSSL)
+If your server is directly exposed to the internet and matches a registered public domain name, Caddy **automatically requests and renews** valid public certificates:
+```caddyfile
+portal.mybarangay.com {
+    reverse_proxy 127.0.0.1:5173
+}
+
+api.mybarangay.com {
+    reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
+        lb_policy round_robin
+        health_uri /api/v1/health
+        health_interval 5s
+        health_timeout 2s
+    }
+}
+```
+
 ---
 
-### 🧪 Step 3: Verification & Failover Test (1-Click Local Controller)
+### 🧪 Step 3: 1-Click Local Offline Simulation
+If you are working offline without router DNS setups, use the pre-configured **[start-system.bat](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.bat)** at the project root.
 
-To avoid manually setting up and managing four different terminals, we have created a unified 1-click controller script **[start-system.ps1](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.ps1)** at the project root.
+This launcher runs standard HTTP on ports `8080` and `8081` to bypass DNS validation:
 
-This script automatically:
-1. Downloads `caddy.exe` directly if it's missing from your project root.
-2. Cleans up any leftover Node/Caddy processes to prevent port lockups.
-3. Launches Backend A (Port 3000), Backend B (Port 3001), Vite Client, and Caddy proxy in minimized background windows.
-4. Executes HTTP health probes on each service.
-5. Prints a real-time status dashboard.
+#### Caddyfile configuration for Local HTTP Offline Testing:
+```caddyfile
+:8080 {
+    reverse_proxy 127.0.0.1:5173
+}
 
-#### Running the test:
-1. Double-click the **[start-system.bat](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.bat)** file in the project root directory. (Or run `start-system.bat` from Command Prompt).
-2. Once the diagnostic dashboard finishes scanning, open your browser and access the app:
-   * **Portal UI (Caddy)**: `http://localhost:8080`
-   * **API Gateway (Caddy Load-Balanced)**: `http://localhost:8081/api/v1/health`
-3. Refresh the health API page several times to see requests load balanced across ports `3000` and `3001`.
-4. **Clean up**: To shut down all background windows and proxy services, run:
-   ```powershell
-   Stop-Process -Name node,caddy -Force
-   ```
+:8081 {
+    reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
+        lb_policy round_robin
+        health_uri /api/v1/health
+        health_interval 5s
+        health_timeout 2s
+    }
+}
+```
+
+#### Running the offline test:
+1. Double-click the **[start-system.bat](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.bat)** file.
+2. Navigate to `http://localhost:8080` on your browser to load the dashboard.
+3. Refresh `http://localhost:8081/api/v1/health` and verify load balancing in the console logs.
+4. Close the window or run `Stop-Process -Name node,caddy -Force` in PowerShell to clean up.
+
+---
+
+### 🌐 Step 4: Environment Variables Matrix
+Ensure your frontend and backend configuration variables match your deployment mode:
+
+| Deployment Mode | Client Base API URL (`client/.env`) | Server Verification URL (`server/.env`) | Caddy Configuration |
+| :--- | :--- | :--- | :--- |
+| **Local Offline Test** | `http://localhost:8081/api/v1` | `http://localhost:8080/verify` | Wildcard ports (`:8080` / `:8081`) |
+| **Local Staging (LAN Domain)** | `https://api.brgy143.gov.ph/api/v1` | `https://portal.brgy143.gov.ph/verify` | Domains with `tls internal` |
+| **Cloudflare Tunnel** | `https://api.brgy143.gov.ph/api/v1` | `https://portal.brgy143.gov.ph/verify` | Cloudflare ingress routes |
+
+---
+
+### 🔑 Step 5: Trusting Local Certificates on Other LAN Devices
+When using Caddy's `tls internal` mode on LAN, Caddy installs its root CA automatically on the host computer. For other devices (like smartphones or staff laptops) to trust the SSL connection and allow webcam access:
+1. Navigate to `%APPDATA%\caddy\pki\authorities\local\` on the host server.
+2. Copy the file **`root.crt`** (Caddy's Root Certificate Authority).
+3. Transfer this file to your test device.
+4. **Install root certificate**:
+   * **Windows/macOS**: Double-click `root.crt` and install it into your system's "Trusted Root Certification Authorities" store.
+   * **Android**: Go to Settings -> Security -> Encryption & Credentials -> Install a Certificate -> CA Certificate, and select `root.crt`.
+   * **iOS**: Send it via AirDrop/Email, download the profile in Settings, then go to Settings -> General -> About -> Certificate Trust Settings and enable Full Trust for Caddy CA.
+
 
 
 
