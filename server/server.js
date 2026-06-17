@@ -91,6 +91,93 @@ app.get('/api/v1/test/super-admin-only', verifyJWT, roleGuard(['Captain']), (req
     res.status(200).json({ message: 'Welcome Captain!', user: req.user });
 });
 
+// Developer SMTP Test Endpoint
+app.post('/api/v1/test/send-email', async (req, res) => {
+    try {
+        const { to } = req.body;
+        if (!to) return res.status(400).json({ error: 'Recipient email "to" is required.' });
+
+        const emailSubject = "E-Serbisyo Test API SMTP Connection Check";
+        const emailHtml = `<h3>Congratulations!</h3><p>Your SMTP configurations are correct. This test email was successfully triggered via the E-Serbisyo API test page.</p>`;
+        
+        const result = await sendEmail(to, emailSubject, emailHtml);
+        if (result.success) {
+            res.status(200).json({ status: 'success', message: 'Test email successfully dispatched.', detail: result });
+        } else {
+            res.status(500).json({ status: 'error', error: result.error });
+        }
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Developer QR Verification Seed Endpoint
+app.post('/api/v1/test/qr-seed', async (req, res) => {
+    try {
+        const QRCode = require('qrcode');
+        const testHash = "verify_test_cryptographic_hash_999";
+        const verificationBase = process.env.VERIFICATION_BASE_URL || 'http://localhost:5173/verify';
+        const verificationUrl = `${verificationBase}/${testHash}`;
+
+        // 1. Create a dummy resident in database if not exists
+        const [existingResident] = await db.query("SELECT resident_id FROM tbl_Residents WHERE email_address = 'test-verifier@malaya.gov.ph'");
+        let residentId;
+        if (existingResident.length > 0) {
+            residentId = existingResident[0].resident_id;
+        } else {
+            const [res] = await db.query(
+                `INSERT INTO tbl_Residents (first_name, last_name, date_of_birth, civil_status, address_street, email_address, contact_number, password_hash, account_status)
+                 VALUES ('Maria', 'Dela Cruz', '1995-05-15', 'Single', 'Blk 5 Lot 2 Barangay Malaya', 'test-verifier@malaya.gov.ph', '09171234567', 'dummypasswordhash', 'Active')`
+            );
+            residentId = res.insertId;
+        }
+
+        // 2. Create a dummy document type if not exists
+        const [existingDocType] = await db.query("SELECT doc_type_id FROM tbl_DocumentTypes WHERE type_name = 'Test Barangay Clearance'");
+        let docTypeId;
+        if (existingDocType.length > 0) {
+            docTypeId = existingDocType[0].doc_type_id;
+        } else {
+            const [officials] = await db.query("SELECT user_id FROM tbl_BarangayOfficials LIMIT 1");
+            const officialId = officials.length > 0 ? officials[0].user_id : null;
+            
+            const [res] = await db.query(
+                `INSERT INTO tbl_DocumentTypes (type_name, description, base_fee, requirements, validity_days, is_available, updated_by)
+                 VALUES ('Test Barangay Clearance', 'Verification test document', 50.00, 'Valid ID', 180, 1, ?)`
+            , [officialId]);
+            docTypeId = res.insertId;
+        }
+
+        // 3. Upsert a dummy request linked to this hash with 'Issued' status
+        await db.query("DELETE FROM tbl_Requests WHERE qr_code_string = ?", [testHash]);
+        const refNo = `REQ-TEST-VERIFY-${Date.now().toString().slice(-4)}`;
+        await db.query(
+            `INSERT INTO tbl_Requests (resident_id, doc_type_id, reference_no, purpose, request_status, qr_code_string, pickup_date)
+             VALUES (?, ?, ?, 'Verification Test Purposes', 'Issued', ?, NOW())`
+        , [residentId, docTypeId, refNo, testHash]);
+
+        // 4. Generate the QR code image file at the project root folder
+        const qrImgPath = path.join(__dirname, '..', 'test-qr.png');
+        await QRCode.toFile(qrImgPath, verificationUrl, {
+            width: 300,
+            margin: 2
+        });
+
+        res.status(200).json({
+            status: 'success',
+            message: 'QR Verification test record seeded successfully and test-qr.png generated.',
+            details: {
+                reference: refNo,
+                hash: testHash,
+                url: verificationUrl,
+                path: qrImgPath
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
 // ==========================================
 // PHASE 1.4: SECURE FILE HANDLING
 // ==========================================
