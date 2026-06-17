@@ -880,14 +880,14 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header">
                         <div>
-                            <span class="method-badge method-POST">POST</span>
+                            <span class="method-badge method-PUT">PUT</span>
                             <strong>Process Payment</strong>
                             <span class="role-badge">Treasurer, Super Admin</span>
                         </div>
-                        <small>/api/v1/payments</small>
+                        <small>/api/v1/payments/:request_id</small>
                     </div>
-                    <p>Process payment for a request.</p>
-                    <div class="grid-3">
+                    <p>Process payment for a request (requires OR Number and Amount).</p>
+                    <div class="grid-2">
                         <div class="form-group">
                             <label>Request ID</label>
                             <input type="number" id="payment-request-id" value="1">
@@ -900,19 +900,6 @@
                             <label>OR Number</label>
                             <input type="text" id="payment-or" value="OR-123456">
                         </div>
-                        <div class="form-group">
-                            <label>Payor Name</label>
-                            <input type="text" id="payment-payor" value="Juan Cruz">
-                        </div>
-                        <div class="form-group">
-                            <label>Payment Status</label>
-                            <select id="payment-status">
-                                <option>Unpaid</option>
-                                <option>Paid</option>
-                                <option>Refunded</option>
-                                <option>Exempted</option>
-                            </select>
-                        </div>
                     </div>
                     <button class="btn btn-primary" onclick="processPayment()">Process</button>
                     <div class="response-section" id="response-payment"></div>
@@ -921,61 +908,29 @@
                 <div class="endpoint-card">
                     <div class="endpoint-header">
                         <div>
-                            <span class="method-badge method-POST">POST</span>
-                            <strong>Mark as Exempted</strong>
-                            <span class="role-badge">Treasurer, Super Admin</span>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>Dashboard Statistics</strong>
+                            <span class="role-badge">Any Authenticated</span>
                         </div>
-                        <small>/api/v1/payments/exempt/:request_id</small>
+                        <small>/api/v1/admin/dashboard-stats</small>
                     </div>
-                    <p>Mark a request as exempted from payment.</p>
-                    <div class="grid-2">
-                        <div class="form-group">
-                            <label>Request ID</label>
-                            <input type="number" id="exempt-request-id" value="1">
-                        </div>
-                        <div class="form-group">
-                            <label>Payor Name</label>
-                            <input type="text" id="exempt-payor" value="Juan Cruz">
-                        </div>
-                    </div>
-                    <button class="btn btn-warning" onclick="markExempted()">Mark Exempted</button>
-                    <div class="response-section" id="response-exempt"></div>
+                    <p>Get admin dashboard statistics (requests count, collections).</p>
+                    <button class="btn btn-info" onclick="getDashboardStats()">Get Stats</button>
+                    <div class="response-section" id="response-dashboard-stats"></div>
                 </div>
                 
                 <div class="endpoint-card">
                     <div class="endpoint-header">
                         <div>
-                            <span class="method-badge method-PUT">PUT</span>
-                            <strong>Mark Ready for Pickup</strong>
-                            <span class="role-badge">Secretary, Super Admin</span>
+                            <span class="method-badge method-GET">GET</span>
+                            <strong>All Requests (Admin View)</strong>
+                            <span class="role-badge">Admin, Secretary, Captain, Treasurer</span>
                         </div>
-                        <small>/api/v1/requests/:request_id/ready</small>
+                        <small>/api/v1/admin/requests</small>
                     </div>
-                    <p>Mark a processed request as ready for pickup.</p>
-                    <div class="form-group">
-                        <label>Request ID</label>
-                        <input type="number" id="ready-request-id" value="1">
-                    </div>
-                    <button class="btn btn-primary" onclick="markReady()">Mark Ready</button>
-                    <div class="response-section" id="response-ready"></div>
-                </div>
-                
-                <div class="endpoint-card">
-                    <div class="endpoint-header">
-                        <div>
-                            <span class="method-badge method-PUT">PUT</span>
-                            <strong>Issue Document</strong>
-                            <span class="role-badge">Secretary, Super Admin</span>
-                        </div>
-                        <small>/api/v1/requests/:request_id/issue</small>
-                    </div>
-                    <p>Issue the document to the resident.</p>
-                    <div class="form-group">
-                        <label>Request ID</label>
-                        <input type="number" id="issue-request-id" value="1">
-                    </div>
-                    <button class="btn btn-success" onclick="issueDocument()">Issue</button>
-                    <div class="response-section" id="response-issue"></div>
+                    <p>Get all document requests for administration.</p>
+                    <button class="btn btn-info" onclick="getAdminRequests()">Get All Requests</button>
+                    <div class="response-section" id="response-admin-requests"></div>
                 </div>
             </div>
             
@@ -1180,7 +1135,7 @@
     </div>
 
     <script>
-        const BASE_URL = 'http://localhost:5000/api/v1';
+        const BASE_URL = 'http://localhost:3000/api/v1';
         
         function getToken() {
             return document.getElementById('token').value.trim();
@@ -1492,34 +1447,23 @@
         }
         
         async function processPayment() {
+            const requestId = document.getElementById('payment-request-id').value;
             const body = {
-                request_id: parseInt(document.getElementById('payment-request-id').value),
-                amount_paid: parseFloat(document.getElementById('payment-amount').value),
                 or_number: document.getElementById('payment-or').value,
-                payor_name: document.getElementById('payment-payor').value,
-                payment_status: document.getElementById('payment-status').value
+                amount_paid: parseFloat(document.getElementById('payment-amount').value)
             };
-            const { result, status } = await apiRequest('POST', '/payments', body);
+            const { result, status } = await apiRequest('PUT', `/payments/${requestId}`, body);
             displayResponse('response-payment', result, status);
         }
         
-        async function markExempted() {
-            const id = document.getElementById('exempt-request-id').value;
-            const payor = document.getElementById('exempt-payor').value;
-            const { result, status } = await apiRequest('POST', `/payments/exempt/${id}`, { payor_name: payor });
-            displayResponse('response-exempt', result, status);
+        async function getDashboardStats() {
+            const { result, status } = await apiRequest('GET', '/admin/dashboard-stats');
+            displayResponse('response-dashboard-stats', result, status);
         }
         
-        async function markReady() {
-            const id = document.getElementById('ready-request-id').value;
-            const { result, status } = await apiRequest('PUT', `/requests/${id}/ready`);
-            displayResponse('response-ready', result, status);
-        }
-        
-        async function issueDocument() {
-            const id = document.getElementById('issue-request-id').value;
-            const { result, status } = await apiRequest('PUT', `/requests/${id}/issue`);
-            displayResponse('response-issue', result, status);
+        async function getAdminRequests() {
+            const { result, status } = await apiRequest('GET', '/admin/requests');
+            displayResponse('response-admin-requests', result, status);
         }
         
         // Phase 7 Functions

@@ -23,7 +23,12 @@ const { sendEmail } = require('./utils/emailSender');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// CORS Configuration - Allow all origins for development/testing
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Safety Net Middleware for JSON Parsing Errors
@@ -691,7 +696,7 @@ app.put('/api/v1/admin/document-types/:id/layout', verifyJWT, roleGuard(['Captai
     }
 });
 
-// Endpoint 20: Create an Announcement (Captain, Captain, Secretary)
+
 // ==========================================
 // PHASE: ANNOUNCEMENTS MANAGER
 // ==========================================
@@ -1084,8 +1089,7 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'S
     }
 });
 
-// Endpoint 24.3: Get Admin Dashboard Statistics
-// Enhanced Dashboard Stats: Corrected for tbl_Requests and tbl_Payments
+// Endpoint 24.3: Get Admin Dashboard Statistics (Upgraded with Chart Data)
 app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
     try {
         // 1. Get Request Status Counts from tbl_Requests
@@ -1106,15 +1110,34 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
             WHERE payment_status = 'Paid'
         `);
 
-        res.status(200).json({
-            status: 'success',
+        // 3. NEW: Document Demand (For the Doughnut Chart)
+        const [docDemand] = await db.query(`
+            SELECT dt.type_name as name, COUNT(r.request_id) as value 
+            FROM tbl_Requests r 
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id 
+            GROUP BY dt.type_name
+        `);
+
+        // 4. NEW: 7-Day Trend (For the Area Chart)
+        const [trend] = await db.query(`
+            SELECT DATE_FORMAT(date_requested, '%b %d') as date, COUNT(*) as count 
+            FROM tbl_Requests 
+            WHERE date_requested >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) 
+            GROUP BY DATE_FORMAT(date_requested, '%b %d') 
+            ORDER BY MIN(date_requested) ASC
+        `);
+
+        res.status(200).json({ 
+            status: 'success', 
             data: {
                 pending: Number(reqStats[0].pending_count || 0),
                 forPayment: Number(reqStats[0].payment_count || 0),
                 processing: Number(reqStats[0].processing_count || 0),
                 ready: Number(reqStats[0].ready_count || 0),
                 totalRequests: Number(reqStats[0].total_requests || 0),
-                totalCollections: Number(finStats[0].total_collections || 0)
+                totalCollections: Number(finStats[0].total_collections || 0),
+                documentDemand: docDemand,
+                trendData: trend
             }
         });
     } catch (error) {
