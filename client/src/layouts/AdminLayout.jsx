@@ -18,6 +18,7 @@ import PaymentsIcon from '@mui/icons-material/Payments';
 import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
 import HistoryIcon from '@mui/icons-material/History';
 import GroupsIcon from '@mui/icons-material/Groups';
+import BackupIcon from '@mui/icons-material/Backup';
 import ForcePasswordChange from '../pages/admin/ForcePasswordChange';
 
 const drawerWidth = 260;
@@ -99,6 +100,12 @@ export default function AdminLayout() {
       text: 'System Settings', 
       icon: <AdminPanelSettingsIcon />, 
       path: '/admin/settings', 
+      visible: ['Super Admin', 'Captain'].includes(userRole) 
+    },
+    { 
+      text: 'Database Backups', 
+      icon: <BackupIcon />, 
+      path: '/admin/backups', 
       visible: ['Super Admin', 'Captain'].includes(userRole) 
     },
   ];
