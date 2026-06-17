@@ -4,56 +4,44 @@ const path = require('path');
 require('dotenv').config();
 
 const ALGORITHM = 'aes-256-cbc';
-const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY || '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef', 'hex');
 
-/**
- * Encrypts a raw file buffer and saves it to the disk
- * @param {Buffer} fileBuffer - The raw file data from multer
- * @param {string} outputFilename - The name to save the file as
- * @returns {string} - The saved filename
- */
+// STABILITY CHECK: Ensure the key is exactly 32 bytes (64 hex chars)
+const rawKey = process.env.ENCRYPTION_KEY || '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+const ENCRYPTION_KEY = Buffer.from(rawKey, 'hex');
+
+if (ENCRYPTION_KEY.length !== 32) {
+    console.error("❌ FATAL: ENCRYPTION_KEY must be a 64-character HEX string (32 bytes). Current length:", ENCRYPTION_KEY.length);
+    process.exit(1); 
+}
+
+console.log("✅ File Encryption System initialized with a stable 32-byte key.");
+
 const encryptAndSaveFile = (fileBuffer, outputFilename) => {
-    // Generate a 16-byte initialization vector (IV) for the file
-    const iv = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(16); // Unique IV for every file
     const cipher = crypto.createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
     
-    // Concat the IV and the encrypted file buffer together
+    // Prepend IV (16 bytes) + Encrypted Data
     const encryptedBuffer = Buffer.concat([iv, cipher.update(fileBuffer), cipher.final()]);
     
-    // Ensure the uploads directory exists
     const uploadsDir = path.join(__dirname, '../uploads');
-    if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir);
-    }
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
     
-    // Save to disk
-    const filePath = path.join(uploadsDir, outputFilename);
-    fs.writeFileSync(filePath, encryptedBuffer);
+    fs.writeFileSync(path.join(uploadsDir, outputFilename), encryptedBuffer);
     return outputFilename;
 };
 
-/**
- * Reads an encrypted file from disk and decrypts it back to a readable buffer
- * @param {string} filename - The name of the encrypted file
- * @returns {Buffer} - The decrypted file buffer
- */
 const decryptFileBuffer = (filename) => {
     const filePath = path.join(__dirname, '../uploads', filename);
-    if (!fs.existsSync(filePath)) {
-        throw new Error('File not found on server.');
-    }
+    if (!fs.existsSync(filePath)) throw new Error('File not found.');
     
-    // Read the encrypted file
     const fileData = fs.readFileSync(filePath);
     
-    // Extract the 16-byte IV from the beginning of the file
+    // Extract the exact 16 bytes for the IV
     const iv = fileData.subarray(0, 16);
-    const encryptedBuffer = fileData.subarray(16);
+    const encryptedData = fileData.subarray(16);
     
     const decipher = crypto.createDecipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
-    const decryptedBuffer = Buffer.concat([decipher.update(encryptedBuffer), decipher.final()]);
-    
-    return decryptedBuffer;
+    return Buffer.concat([decipher.update(encryptedData), decipher.final()]);
 };
 
 module.exports = { encryptAndSaveFile, decryptFileBuffer };
