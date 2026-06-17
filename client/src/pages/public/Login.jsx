@@ -19,6 +19,7 @@ export default function Login() {
   
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [idProofFile, setIdProofFile] = useState(null);
 
   const [formData, setFormData] = useState({
     first_name: '', last_name: '', date_of_birth: '',
@@ -30,6 +31,7 @@ export default function Login() {
     setIsLoginView(!isLoginView);
     setError('');
     setSuccess('');
+    setIdProofFile(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -60,8 +62,25 @@ export default function Login() {
           navigate('/admin/dashboard');
         }
       } else {
-        const response = await api.post('/auth/resident/register', formData);
+        if (!idProofFile) {
+          setError('Official ID proof image is required to complete registration.');
+          setLoading(false);
+          return;
+        }
+
+        const data = new FormData();
+        Object.keys(formData).forEach((key) => {
+          data.append(key, formData[key]);
+        });
+        data.append('id_proof_image', idProofFile);
+
+        const response = await api.post('/auth/resident/register', data, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        });
         setSuccess(response.data.message);
+        setIdProofFile(null);
         setTimeout(() => setIsLoginView(true), 3000); 
       }
     } catch (err) {
@@ -181,6 +200,31 @@ export default function Login() {
                   <Grid item xs={12}>
                     <TextField required fullWidth label="Complete Address" name="address_street" onChange={handleChange} />
                   </Grid>
+                  <Grid item xs={12}>
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      fullWidth
+                      sx={{ 
+                        py: 1.5, 
+                        borderStyle: 'dashed', 
+                        borderColor: idProofFile ? '#10b981' : 'rgba(0, 0, 0, 0.23)', 
+                        color: idProofFile ? '#10b981' : 'text.secondary',
+                        borderRadius: 2 
+                      }}
+                    >
+                      {idProofFile ? `Selected: ${idProofFile.name}` : 'Upload Valid ID Proof *'}
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        hidden
+                        onChange={(e) => setIdProofFile(e.target.files[0])}
+                      />
+                    </Button>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5, ml: 1 }}>
+                      Accepted formats: JPG, PNG, PDF. This is required for Barangay verification.
+                    </Typography>
+                  </Grid>
                 </Grid>
               )}
 
@@ -202,6 +246,20 @@ export default function Login() {
                   ),
                 }}
               />
+
+              {isLoginView && (
+                <Box display="flex" justifyContent="flex-end" sx={{ mt: -1 }}>
+                  <Link 
+                    component="button" 
+                    variant="body2" 
+                    type="button"
+                    onClick={() => navigate('/forgot-password')}
+                    sx={{ textDecoration: 'none', fontWeight: '500', color: 'primary.main' }}
+                  >
+                    Forgot Password?
+                  </Link>
+                </Box>
+              )}
 
               <Button
                 fullWidth type="submit" variant="contained" size="large"

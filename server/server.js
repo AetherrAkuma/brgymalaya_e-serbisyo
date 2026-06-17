@@ -18,6 +18,7 @@ const upload = require('./middleware/upload');
 const { generateBarangayPDF } = require('./utils/pdfGenerator');
 // Phase 8 Audit Logger
 const { logAction, logLogin, logStatusChange, logDocumentPrint, logPayment } = require('./utils/auditLogger');
+const { sendEmail } = require('./utils/emailSender');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -135,7 +136,7 @@ app.get('/api/v1/files/:filename', verifyJWT, roleGuard(['Captain', 'Secretary',
 // PHASE 2: IDENTITY & ACCOUNT MANAGEMENT
 // ==========================================
 
-app.post('/api/v1/auth/resident/register', async (req, res) => {
+app.post('/api/v1/auth/resident/register', upload.single('id_proof_image'), async (req, res) => {
     try {
         const {
             first_name, middle_name, last_name, date_of_birth,
@@ -146,25 +147,42 @@ app.post('/api/v1/auth/resident/register', async (req, res) => {
             return res.status(400).json({ error: 'All required fields must be provided.' });
         }
 
+        // Check for uploaded ID proof
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ error: 'Official ID proof image is required.' });
+        }
+
         const [existing] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email_address]);
 
-        // FIX: We must check if the array actually has items inside it, not just if the array exists.
         if (existing && existing.length > 0) {
             return res.status(400).json({ status: 'error', message: 'Email address is already registered.' });
         }
+
+        // Process ID proof file
+        const idFile = req.file;
+        let ext = '.bin';
+        if (idFile.mimetype === 'image/jpeg') ext = '.jpg';
+        else if (idFile.mimetype === 'image/png') ext = '.png';
+        else if (idFile.mimetype === 'application/pdf') ext = '.pdf';
+
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const savedFilename = `idproof_reg_${uniqueSuffix}${ext}.enc`;
+
+        // Encrypt and save to the vault
+        encryptAndSaveFile(idFile.buffer, savedFilename);
 
         const hashedPassword = hashPassword(password);
         const encryptedContact = encryptData(contact_number);
 
         const insertQuery = `
             INSERT INTO tbl_Residents 
-            (first_name, middle_name, last_name, date_of_birth, civil_status, address_street, email_address, contact_number, password_hash, account_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')
+            (first_name, middle_name, last_name, date_of_birth, civil_status, address_street, email_address, contact_number, password_hash, id_proof_image, account_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')
         `;
 
         const [result] = await db.query(insertQuery, [
             first_name, middle_name || null, last_name, date_of_birth,
-            civil_status, address_street, email_address, encryptedContact, hashedPassword
+            civil_status, address_street, email_address, encryptedContact, hashedPassword, savedFilename
         ]);
 
         res.status(201).json({
@@ -254,6 +272,126 @@ app.post('/api/v1/auth/login', async (req, res) => {
     } catch (error) {
         console.error("[LOGIN ERROR]:", error);
         res.status(500).json({ status: 'error', message: 'Internal server error during login.' });
+    }
+});
+
+// Endpoint: Forgot Password
+app.post('/api/v1/auth/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ error: 'Email address is required.' });
+        }
+
+        let userId = null;
+        let firstName = '';
+        let isResident = false;
+
+        // 1. Check if resident exists
+        const [residents] = await db.query('SELECT resident_id, first_name FROM tbl_Residents WHERE email_address = ? AND account_status = "Active"', [email]);
+        if (residents.length > 0) {
+            userId = residents[0].resident_id;
+            firstName = residents[0].first_name;
+            isResident = true;
+        } else {
+            // 2. Check if official exists
+            const [officials] = await db.query('SELECT user_id, full_name FROM tbl_BarangayOfficials WHERE email_official = ? AND account_status = "Active"', [email]);
+            if (officials.length > 0) {
+                userId = officials[0].user_id;
+                firstName = officials[0].full_name.split(' ')[0]; // Use first name
+            }
+        }
+
+        // Security best practice: If email is not found, respond with the same success message to prevent user enumeration
+        if (!userId) {
+            return res.status(200).json({ status: 'success', message: 'If the account exists, a password reset link has been sent to your email.' });
+        }
+
+        // 3. Generate secure reset token
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        // 4. Save to tbl_PasswordReset
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const userAgent = req.headers['user-agent'] || 'Unknown';
+        await db.query(
+            'INSERT INTO tbl_PasswordReset (user_id, token_hash, email, ip_request, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))',
+            [userId, tokenHash, email, ip, userAgent]
+        );
+
+        // 5. Construct Reset URL using VERIFICATION_BASE_URL (removing /verify subpath if it exists)
+        const baseUrl = (process.env.VERIFICATION_BASE_URL || 'http://localhost:5173/verify').replace('/verify', '');
+        const resetUrl = `${baseUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
+
+        // 6. Send email
+        const emailSubject = 'Reset Your E-Serbisyo Account Password';
+        const emailHtml = `
+            <h3>Reset Password Request</h3>
+            <p>Hi ${firstName},</p>
+            <p>You requested a password reset for your E-Serbisyo account. Please click the button below to set a new password:</p>
+            <p style="margin: 20px 0;">
+                <a href="${resetUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
+            </p>
+            <p>This link is valid for 1 hour. If you did not make this request, you can safely ignore this email.</p>
+            <br/>
+            <p>Best regards,<br/>E-Serbisyo Barangay Malaya Support</p>
+        `;
+
+        await sendEmail(email, emailSubject, emailHtml);
+
+        res.status(200).json({ status: 'success', message: 'If the account exists, a password reset link has been sent to your email.' });
+    } catch (error) {
+        console.error('[FORGOT PASSWORD ERROR]:', error);
+        res.status(500).json({ error: 'Internal server error processing password reset.' });
+    }
+});
+
+// Endpoint: Reset Password
+app.post('/api/v1/auth/reset-password', async (req, res) => {
+    try {
+        const { email, token, new_password } = req.body;
+        if (!email || !token || !new_password) {
+            return res.status(400).json({ error: 'Email, reset token, and new password are required.' });
+        }
+
+        // 1. Hash incoming token to match database
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+        // 2. Query tbl_PasswordReset
+        const [resets] = await db.query(
+            'SELECT * FROM tbl_PasswordReset WHERE email = ? AND token_hash = ? AND is_used = FALSE AND expires_at > NOW() LIMIT 1',
+            [email, tokenHash]
+        );
+
+        if (resets.length === 0) {
+            return res.status(400).json({ error: 'Invalid or expired password reset link.' });
+        }
+
+        const resetRecord = resets[0];
+
+        // 3. Hash the new password
+        const hashedPassword = hashPassword(new_password);
+
+        // 4. Update the user password in appropriate table
+        const [residents] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email]);
+        if (residents.length > 0) {
+            await db.query('UPDATE tbl_Residents SET password_hash = ? WHERE email_address = ?', [hashedPassword, email]);
+        } else {
+            const [officials] = await db.query('SELECT user_id FROM tbl_BarangayOfficials WHERE email_official = ?', [email]);
+            if (officials.length > 0) {
+                await db.query('UPDATE tbl_BarangayOfficials SET password_hash = ?, require_password_change = 0 WHERE email_official = ?', [hashedPassword, email]);
+            } else {
+                return res.status(400).json({ error: 'User account not found.' });
+            }
+        }
+
+        // 5. Mark the token as used
+        await db.query('UPDATE tbl_PasswordReset SET is_used = TRUE WHERE reset_id = ?', [resetRecord.reset_id]);
+
+        res.status(200).json({ status: 'success', message: 'Password has been reset successfully. You can now log in.' });
+    } catch (error) {
+        console.error('[RESET PASSWORD ERROR]:', error);
+        res.status(500).json({ error: 'Internal server error resetting password.' });
     }
 });
 
@@ -571,12 +709,33 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Captain', '
             });
         }
 
+        const [resident] = await db.query(
+            'SELECT first_name, email_address FROM tbl_Residents WHERE resident_id = ?',
+            [id]
+        );
+        if (resident.length === 0) return res.status(404).json({ error: 'Resident not found.' });
+        const { first_name, email_address } = resident[0];
+
         const [result] = await db.query(
             'UPDATE tbl_Residents SET account_status = ? WHERE resident_id = ?',
             [account_status, id]
         );
 
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Resident not found.' });
+
+        // Send Email Notification
+        let statusDescription = 'is currently pending verification';
+        if (account_status === 'Active') {
+            statusDescription = 'has been approved and is now active! You can now log in to request certificates.';
+        } else if (account_status === 'Blocked') {
+            statusDescription = 'has been blocked. If you believe this is an error, please contact the Barangay Hall.';
+        }
+
+        await sendEmail(
+            email_address,
+            `Account Registration Update - ${account_status}`,
+            `Hi ${first_name},<br/><br/>Your resident account status for E-Serbisyo Barangay Malaya ${statusDescription}`
+        );
 
         res.status(200).json({
             status: 'success',
@@ -782,13 +941,20 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'S
             return res.status(400).json({ error: "Invalid action. Must be 'Approve' or 'Reject'." });
         }
 
-        // 1. Get current status and reference number for the audit log
-        const [current] = await db.query('SELECT request_status, reference_no, resident_id FROM tbl_Requests WHERE request_id = ?', [request_id]);
+        // 1. Get current status, reference number, resident contact info, and document details
+        const [current] = await db.query(`
+            SELECT r.request_status, r.reference_no, r.resident_id, res.first_name, res.email_address, dt.type_name, dt.base_fee
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.request_id = ?
+        `, [request_id]);
         if (current.length === 0) return res.status(404).json({ error: 'Request not found.' });
 
         const oldStatus = current[0].request_status;
         const refNo = current[0].reference_no;
         const resident_id = current[0].resident_id;
+        const { first_name, email_address, type_name, base_fee } = current[0];
 
         let newStatus = action === 'Reject' ? 'Rejected' : 'For Payment';
 
@@ -807,8 +973,19 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'S
         // 3. Log the change to the Audit Trail (Phase 8 Requirement)
         await logStatusChange(official_id, request_id, oldStatus, newStatus, `Admin ${action}ed request ${refNo}`);
 
-        // Email Hook Simulation (FR14)
-        console.log(`[EMAIL SIMULATION] Sent to Resident ID ${resident_id}: Your request ${refNo} is now ${newStatus}.`);
+        // 4. Send Email Notification
+        let emailSubject = '';
+        let emailHtml = '';
+
+        if (newStatus === 'For Payment') {
+            emailSubject = `Document Request Approved - Reference #${refNo}`;
+            emailHtml = `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${refNo}</b>) has been approved!<br/><br/>To proceed with document processing, please pay the fee of <b>PHP ${base_fee}</b> at the Barangay Treasurer's office.<br/><br/>Thank you!`;
+        } else {
+            emailSubject = `Document Request Rejected - Reference #${refNo}`;
+            emailHtml = `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${refNo}</b>) was rejected.<br/><br/><b>Reason for Rejection:</b> ${rejection_reason || 'No specific reason provided.'}<br/><br/>If you have questions, please visit or contact the Barangay Hall.`;
+        }
+
+        await sendEmail(email_address, emailSubject, emailHtml);
 
         res.status(200).json({
             status: 'success',
@@ -1154,6 +1331,33 @@ app.post('/api/v1/payments', verifyJWT, roleGuard(['Treasurer', 'Captain']), asy
         `;
         await db.query(updateRequestQuery, [next_request_status, request_id]);
 
+        // Fetch request and resident details for email
+        const [reqDetails] = await db.query(`
+            SELECT r.reference_no, res.first_name, res.email_address, dt.type_name
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.request_id = ?
+        `, [request_id]);
+
+        if (reqDetails.length > 0) {
+            const { reference_no, first_name, email_address, type_name } = reqDetails[0];
+            let emailSubject = '';
+            let emailHtml = '';
+
+            if (next_request_status === 'Processing') {
+                emailSubject = `Payment Confirmed - Reference #${reference_no}`;
+                emailHtml = `Hi ${first_name},<br/><br/>Your payment for <b>${type_name}</b> (Reference No: <b>${reference_no}</b>) has been confirmed.<br/><br/>We have started processing your document. You will receive another notification once it is printed and ready for pickup.<br/><br/>Thank you!`;
+            } else if (next_request_status === 'Cancelled') {
+                emailSubject = `Request Cancelled & Refunded - Reference #${reference_no}`;
+                emailHtml = `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${reference_no}</b>) has been cancelled and marked as refunded. Please visit the Treasurer's office for details.`;
+            }
+
+            if (emailSubject) {
+                await sendEmail(email_address, emailSubject, emailHtml);
+            }
+        }
+
         res.status(201).json({
             status: 'success',
             message: `Payment successfully encoded as ${final_status}. Request is now ${next_request_status}.`
@@ -1191,6 +1395,24 @@ app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer
             WHERE request_id = ? AND request_status = 'For Payment'
         `;
         await db.query(updateRequestQuery, [request_id]);
+
+        // Fetch request and resident details for email
+        const [reqDetails] = await db.query(`
+            SELECT r.reference_no, res.first_name, res.email_address, dt.type_name
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.request_id = ?
+        `, [request_id]);
+
+        if (reqDetails.length > 0) {
+            const { reference_no, first_name, email_address, type_name } = reqDetails[0];
+            await sendEmail(
+                email_address,
+                `Document Processing (Exempted) - Reference #${reference_no}`,
+                `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${reference_no}</b>) has been marked as <b>Exempted/Free</b>.<br/><br/>We have started processing your document. You will receive another notification once it is printed and ready for pickup.`
+            );
+        }
 
         res.status(201).json({ status: 'success', message: 'Document marked as Exempted/Free. Request is now Processing.' });
     } catch (error) {
@@ -1250,7 +1472,23 @@ app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary',
             return res.status(400).json({ error: 'Request must be in Processing state to be marked as Ready for Pickup.' });
         }
 
-        console.log(`[EMAIL SIMULATION] Your request is printed and Ready for Pickup at the Barangay Hall.`);
+        // Fetch request and resident details for email
+        const [reqDetails] = await db.query(`
+            SELECT r.reference_no, res.first_name, res.email_address, dt.type_name
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.request_id = ?
+        `, [request_id]);
+
+        if (reqDetails.length > 0) {
+            const { reference_no, first_name, email_address, type_name } = reqDetails[0];
+            await sendEmail(
+                email_address,
+                `Document Ready for Pickup - Reference #${reference_no}`,
+                `Hi ${first_name},<br/><br/>Your requested document <b>${type_name}</b> (Reference No: <b>${reference_no}</b>) is now printed and <b>Ready for Pickup</b> at the Barangay Hall.<br/><br/>Please bring a valid ID and show this reference number when claiming your document.<br/><br/>Thank you!`
+            );
+        }
 
         res.status(200).json({ status: 'success', message: 'Request marked as Ready for Pickup.' });
     } catch (error) {
@@ -1272,6 +1510,24 @@ app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary',
 
         if (result.affectedRows === 0) {
             return res.status(400).json({ error: 'Request must be Ready for Pickup before it can be Issued.' });
+        }
+
+        // Fetch request and resident details for email
+        const [reqDetails] = await db.query(`
+            SELECT r.reference_no, res.first_name, res.email_address, dt.type_name
+            FROM tbl_Requests r
+            JOIN tbl_Residents res ON r.resident_id = res.resident_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            WHERE r.request_id = ?
+        `, [request_id]);
+
+        if (reqDetails.length > 0) {
+            const { reference_no, first_name, email_address, type_name } = reqDetails[0];
+            await sendEmail(
+                email_address,
+                `Document Successfully Issued - Reference #${reference_no}`,
+                `Hi ${first_name},<br/><br/>Your requested document <b>${type_name}</b> (Reference No: <b>${reference_no}</b>) has been successfully <b>Issued</b> and recorded.<br/><br/>Thank you for using E-Serbisyo Barangay Malaya!`
+            );
         }
 
         res.status(200).json({ status: 'success', message: 'Document successfully issued and recorded in the database.' });
@@ -1378,7 +1634,8 @@ app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secr
         // Format: Hash(RefNo + Secret) - SHA256 per FR6
         const secretKey = process.env.JWT_SECRET || 'brgy_secret';
         const qrHash = crypto.createHash('sha256').update(requestData.reference_no + secretKey).digest('hex');
-        const verificationUrl = `https://brgy-eserbisyo.gov.ph/verify/${qrHash}`;
+        const verificationBase = process.env.VERIFICATION_BASE_URL || 'http://localhost:5173/verify';
+        const verificationUrl = `${verificationBase}/${qrHash}`;
 
         // Save hash to DB
         await db.query("UPDATE tbl_Requests SET qr_code_string = ? WHERE request_id = ?", [qrHash, request_id]);
@@ -1746,6 +2003,130 @@ app.get('/api/v1/admin/settings', verifyJWT, roleGuard(['Captain', 'Captain']), 
         });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Backup Endpoints (Restricted to Barangay Captain / Super Admin)
+app.get('/api/v1/admin/backups', verifyJWT, roleGuard(['Captain']), async (req, res) => {
+    try {
+        const { listBackups } = require('./utils/backupRestore');
+        res.status(200).json({ status: 'success', data: listBackups() });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/v1/admin/backups/create', verifyJWT, roleGuard(['Captain']), async (req, res) => {
+    try {
+        const { createBackup } = require('./utils/backupRestore');
+        const result = await createBackup();
+
+        // Log to audit trail
+        await logAction({
+            user_id: req.user.id,
+            user_type: 'Official',
+            table_affected: 'tbl_SystemSettings',
+            record_id: null,
+            action_type: 'BACKUP_CREATED',
+            old_value: null,
+            new_value: { filename: result.filename },
+            ip_address: req.ip
+        });
+
+        res.status(201).json({ status: 'success', message: 'Backup created successfully.', filename: result.filename });
+    } catch (error) {
+        console.error('[BACKUP CREATE ERROR]:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/v1/admin/backups/download/:filename', verifyJWT, roleGuard(['Captain']), (req, res) => {
+    try {
+        const { filename } = req.params;
+        const backupPath = path.join(__dirname, 'backups', filename);
+        if (!fs.existsSync(backupPath)) {
+            return res.status(404).json({ error: 'Backup file not found.' });
+        }
+        res.download(backupPath, filename);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/v1/admin/backups/restore/:filename', verifyJWT, roleGuard(['Captain']), async (req, res) => {
+    try {
+        const { filename } = req.params;
+        const { restoreBackup } = require('./utils/backupRestore');
+        await restoreBackup(filename);
+
+        // Log to audit trail
+        await logAction({
+            user_id: req.user.id,
+            user_type: 'Official',
+            table_affected: 'tbl_SystemSettings',
+            record_id: null,
+            action_type: 'SYSTEM_RESTORED',
+            old_value: null,
+            new_value: { restored_from: filename },
+            ip_address: req.ip
+        });
+
+        res.status(200).json({ status: 'success', message: 'System database and files successfully restored.' });
+    } catch (error) {
+        console.error('[BACKUP RESTORE ERROR]:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/v1/admin/backups/:filename', verifyJWT, roleGuard(['Captain']), async (req, res) => {
+    try {
+        const { filename } = req.params;
+        const { deleteBackup } = require('./utils/backupRestore');
+        const deleted = deleteBackup(filename);
+
+        if (!deleted) {
+            return res.status(404).json({ error: 'Backup file not found.' });
+        }
+
+        // Log to audit trail
+        await logAction({
+            user_id: req.user.id,
+            user_type: 'Official',
+            table_affected: 'tbl_SystemSettings',
+            record_id: null,
+            action_type: 'BACKUP_DELETED',
+            old_value: null,
+            new_value: { filename },
+            ip_address: req.ip
+        });
+
+        res.status(200).json({ status: 'success', message: 'Backup file deleted successfully.' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Daily Cron Job (at 00:00) to Backup Database and Files
+const cron = require('node-cron');
+const { createBackup, listBackups, deleteBackup } = require('./utils/backupRestore');
+
+cron.schedule('0 0 * * *', async () => {
+    console.log('[CRON] Starting scheduled daily backup...');
+    try {
+        const result = await createBackup();
+        console.log(`[CRON] Scheduled backup created: ${result.filename}`);
+
+        // Maintain last 7 backups (Rotate older files)
+        const backups = listBackups();
+        if (backups.length > 7) {
+            const olderBackups = backups.slice(7);
+            for (const oldBackup of olderBackups) {
+                deleteBackup(oldBackup.filename);
+                console.log(`[CRON] Rotated (deleted) old backup file: ${oldBackup.filename}`);
+            }
+        }
+    } catch (error) {
+        console.error('[CRON ERROR] Scheduled daily backup failed:', error.message);
     }
 });
 

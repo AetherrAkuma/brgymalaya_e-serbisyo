@@ -99,7 +99,10 @@ async function generateBarangayPDF(data, sigBuffer, qrHash, layout, templateBuff
     // 5. Verification QR
     const qrPos = getPos('qr', 50, 700);
     try {
-        const qrDataUrl = await QRCode.toDataURL(`https://brgy-verify.gov.ph/${qrHash}`);
+        const qrUrl = (qrHash.startsWith('http://') || qrHash.startsWith('https://')) 
+            ? qrHash 
+            : `https://brgy-verify.gov.ph/${qrHash}`;
+        const qrDataUrl = await QRCode.toDataURL(qrUrl);
         const qrImg = await pdfDoc.embedPng(qrDataUrl);
         page.drawImage(qrImg, { x: qrPos.x, y: qrPos.y - 90, width: 90, height: 90 });
     } catch (e) {}

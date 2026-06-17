@@ -6,6 +6,8 @@ import ResidentLayout from './layouts/ResidentLayout';
 import AdminLayout from './layouts/AdminLayout';
 import Login from './pages/public/Login';
 import Home from './pages/public/Home';
+import ForgotPassword from './pages/public/ForgotPassword';
+import ResetPassword from './pages/public/ResetPassword';
 import ResidentDashboard from './pages/resident/Dashboard';
 import RequestWizard from './pages/resident/RequestWizard';
 import MyRequests from './pages/resident/MyRequests';
@@ -21,10 +23,9 @@ import SuperAdminDashboard from './pages/admin/SuperAdminDashboard';
 import ManageOfficials from './pages/admin/ManageOfficials';
 import AuditLogs from './pages/admin/AuditLogs';
 import SystemSettings from './pages/admin/SystemSettings';
+import BackupManagement from './pages/admin/BackupManagement';
 
-// --- TEMPORARY PLACEHOLDER PAGES ---
-// We will replace these with real, styled components in the next steps
-const VerifyQR = () => <h1>QR Document Verification Scanner</h1>;
+import VerifyQR from './pages/public/VerifyQR';
 
 
 export default function App() {
@@ -38,7 +39,9 @@ export default function App() {
         <Route path="/" element={<PublicLayout />}>
           <Route index element={<Home />} />
           <Route path="login" element={<Login />} />
-          <Route path="verify" element={<VerifyQR />} />
+          <Route path="verify/:hash?" element={<VerifyQR />} />
+          <Route path="forgot-password" element={<ForgotPassword />} />
+          <Route path="reset-password" element={<ResetPassword />} />
         </Route>
 
         {/* ============================== */}
@@ -69,6 +72,7 @@ export default function App() {
         <Route path="officials" element={<ManageOfficials />} />
         <Route path="audit" element={<AuditLogs />} />
         <Route path="settings" element={<SystemSettings />} />
+        <Route path="backups" element={<BackupManagement />} />
       </Route>
 
         {/* Catch-All 404 Route */}
