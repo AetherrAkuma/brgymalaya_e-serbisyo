@@ -10,6 +10,8 @@ This document provides complete instructions for developers and administrators t
 3. [Environment Configuration & Setup](#-environment-configuration--setup)
 4. [Verification & Manual Test Procedures](#-verification--manual-test-procedures)
 5. [Developer Customization Guide (Emails & Backups)](#-developer-customization-guide-emails--backups)
+6. [Technitium Split-Horizon DNS & Local SSL Proxy Setup](#-technitium-split-horizon-dns--local-ssl-proxy-setup)
+
 
 ---
 
@@ -163,3 +165,81 @@ cron.schedule('0 0 * * *', async () => {
     // Scheduled backup logic...
 });
 ```
+
+---
+
+## 🌐 Technitium Split-Horizon DNS & Local SSL Proxy Setup
+
+This section details how to configure local DNS resolution and direct local HTTPS requests inside the Barangay Hall Local Area Network (LAN) using **Technitium DNS Server** and **Caddy Server** as a reverse proxy.
+
+### 📋 Architectural Overview
+When a device connects to the Barangay Hall Wi-Fi or Ethernet switches:
+1. It queries **Technitium DNS** for `portal.brgy143.gov.ph`.
+2. Technitium DNS resolves it directly to the local server's private IP (`192.168.1.100`) rather than querying public root servers.
+3. The client browser connects to the private IP over HTTPS (ports 443/8443).
+4. **Caddy Server** intercept the request, validates the certificate, and reverse proxies it to the local Express backend (port 3000) or Vite client (port 5173).
+
+---
+
+### 🛠️ Step 1: Technitium DNS Zone Setup
+Once physically at the Barangay Hall:
+1. Open the Technitium Admin Console at `http://<technitium-ip>:5380`.
+2. Click on the **Zones** tab in the top navigation.
+3. Click **Create Zone** in the top-right corner.
+   * **Zone Name**: `brgy143.gov.ph` (or your chosen domain name)
+   * **Zone Type**: Primary
+4. Inside the newly created zone, click **Add Record**:
+   * **Record 1 (Client Portal)**:
+     * **Name**: `portal`
+     * **Type**: `A`
+     * **IPv4 Address**: `192.168.1.100` (Your local server machine IP)
+   * **Record 2 (API Endpoint)**:
+     * **Name**: `api`
+     * **Type**: `A`
+     * **IPv4 Address**: `192.168.1.100` (Your local server machine IP)
+5. Navigate to the **Settings** tab -> **Forwarders**. Ensure public resolvers (such as `1.1.1.1` and `8.8.8.8`) are configured so that normal internet queries resolve successfully.
+
+---
+
+### 🔒 Step 2: Local SSL Reverse Proxy (Caddy) Setup
+Since browser camera access (required for scanning certificate QR codes) is restricted on non-secure connections, the local domain must run over HTTPS. **Caddy** handles local certificates and reverse proxying automatically.
+
+1. **Install Caddy** on the local server machine:
+   * Download the executable from the [Caddy Website](https://caddyserver.com/download).
+   * Or install via Chocolatey: `choco install caddy`
+2. Create a file named `Caddyfile` (no extension) in your Caddy installation folder (or in the root folder of your project for easy management):
+   ```caddyfile
+   portal.brgy143.gov.ph {
+       # Reverse proxy to the Vite client server
+       reverse_proxy localhost:5173
+       
+       # Generate and trust certificates using Caddy's internal local CA
+       tls internal
+   }
+
+   api.brgy143.gov.ph {
+       # Reverse proxy to the Express API server
+       reverse_proxy localhost:3000
+       
+       # Generate and trust certificates using Caddy's internal local CA
+       tls internal
+   }
+   ```
+3. Run Caddy in your terminal:
+   ```bash
+   caddy run --config ./Caddyfile
+   ```
+4. **Trust the Local Certificate**:
+   * When Caddy runs with `tls internal`, it establishes its own root Certificate Authority (CA) on the server.
+   * On the server host machine, Caddy will try to install this root CA into the local system store automatically.
+   * To allow other devices (staff laptops/smartphones) on the LAN to trust the HTTPS certificate without warnings, copy Caddy's root certificate (located at `%APPDATA%\caddy\pki\authorities\local\root.crt` on Windows) and install/trust it on those devices' certificate managers.
+
+---
+
+### 📶 Step 3: Router/DHCP Configuration
+To ensure all devices on the Barangay network automatically query your Technitium DNS server:
+1. Log in to your local router's admin panel (usually `http://192.168.1.1` or `http://192.168.0.1`).
+2. Locate the **DHCP Server Settings**.
+3. Change the **Primary DNS Server (DNS 1)** value to your DNS server's local IP address (e.g., `192.168.1.100`).
+4. Set the **Secondary DNS Server (DNS 2)** to a public fallback (e.g., `1.1.1.1`).
+5. Save settings and restart the router. Devices will acquire the new DNS server IP next time they reconnect.
