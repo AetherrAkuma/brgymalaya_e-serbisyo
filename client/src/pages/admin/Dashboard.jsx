@@ -177,104 +177,87 @@ export default function Dashboard() {
       {/* ==========================================
           ADMINISTRATIVE STATISTICS & CHARTS
           ========================================== */}
-      <Paper elevation={0} sx={{ p: 4, borderRadius: 4, border: '1px solid #e2e8f0', bgcolor: 'white', mb: 5 }}>
-        <Typography variant="h6" fontWeight="900" color="#0f172a" sx={{ mb: 1 }}>
-          Administrative Statistics & Analytics
+      <Paper elevation={0} sx={{ 
+        p: 4, 
+        borderRadius: 4, 
+        border: '1px solid #e2e8f0', 
+        bgcolor: 'white', 
+        mb: 5,
+        width: '100%' // Force full width
+      }}>
+        <Typography variant="h5" fontWeight="900" color="#0f172a" sx={{ mb: 1 }}>
+          Administrative Analytics
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-          Live data tracking for barangay document requests and workflow efficiency.
+          Live workflow data and document demand tracking.
         </Typography>
 
-        <Grid container spacing={4}>
+        {/* Using Flexbox instead of Grid for reliable full-width stretching */}
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: { xs: 'column', md: 'row' }, 
+          gap: 3, 
+          width: '100%',
+          alignItems: 'stretch'
+        }}>
           
-          {/* CHART 1: 7-Day Request Trend (Area Chart) */}
-          <Grid item xs={12} md={8}>
-            <Typography variant="subtitle2" fontWeight="bold" color="text.secondary" gutterBottom>
-              7-DAY REQUEST VOLUME
-            </Typography>
-            <Box sx={{ height: 300, width: '100%', bgcolor: '#f8fafc', p: 2, borderRadius: 2, border: '1px solid #f1f5f9' }}>
-              {trendData.length === 0 ? (
-                <Typography sx={{ textAlign: 'center', mt: 10, color: '#94a3b8' }}>Not enough data for trend analysis.</Typography>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={trendData}>
-                    <defs>
-                      <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
-                    <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} />
-                    <ChartTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                    <Area type="monotone" dataKey="count" name="Total Requests" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
-            </Box>
-          </Grid>
-
-          {/* CHART 2: Document Demand Breakdown (Doughnut Chart) */}
-          <Grid item xs={12} md={4}>
-            <Typography variant="subtitle2" fontWeight="bold" color="text.secondary" gutterBottom>
-              DOCUMENT DEMAND
-            </Typography>
-            <Box sx={{ height: 300, width: '100%', bgcolor: '#f8fafc', p: 2, borderRadius: 2, border: '1px solid #f1f5f9', display: 'flex', justifyContent: 'center' }}>
-              {documentDemand.length === 0 ? (
-                <Typography sx={{ textAlign: 'center', mt: 10, color: '#94a3b8' }}>No documents requested yet.</Typography>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={documentDemand}
-                      cx="50%" cy="50%"
-                      innerRadius={60} outerRadius={90}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {documentDemand.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <ChartTooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              )}
-            </Box>
-          </Grid>
-
-          {/* CHART 3: Processing Funnel (Horizontal Stacked Bar) */}
-          <Grid item xs={12}>
-            <Typography variant="subtitle2" fontWeight="bold" color="text.secondary" gutterBottom sx={{ mt: 2 }}>
-              CURRENT WORKFLOW BOTTLENECKS
-            </Typography>
-            <Box sx={{ height: 100, width: '100%' }}>
+          {/* CHART 1: 7-DAY VOLUME (Flex 2) */}
+          <Box sx={{ flex: 2, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320 }}>
+            <Typography variant="subtitle2" fontWeight="800" color="text.secondary" gutterBottom>7-DAY REQUEST VOLUME</Typography>
+            <Box sx={{ height: 250, width: '100%', mt: 2 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  layout="vertical"
-                  data={[{
-                    name: 'Active Queue', 
-                    Pending: stats.pending, 
-                    'Awaiting Payment': stats.forPayment, 
-                    Processing: stats.processing
-                  }]}
-                  margin={{ top: 0, right: 0, left: -20, bottom: 0 }}
-                >
+                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
+                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} />
+                  <ChartTooltip contentStyle={{ borderRadius: '8px', border: 'none' }} />
+                  <Area type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={4} fill="url(#colorCount)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Box>
+          </Box>
+
+          {/* CHART 2: DOCUMENT DEMAND (Flex 1) */}
+          <Box sx={{ flex: 1, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320 }}>
+            <Typography variant="subtitle2" fontWeight="800" color="text.secondary" gutterBottom>DOCUMENT DEMAND</Typography>
+            <Box sx={{ height: 250, width: '100%', mt: 2 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={documentDemand} cx="50%" cy="50%" innerRadius="50%" outerRadius="80%" paddingAngle={3} dataKey="value" stroke="none">
+                    {documentDemand.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                  </Pie>
+                  <ChartTooltip />
+                  <Legend verticalAlign="bottom" height={30} iconType="circle" wrapperStyle={{ fontSize: '11px' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </Box>
+          </Box>
+
+          {/* CHART 3: BOTTLENECKS (Flex 1.5) */}
+          <Box sx={{ flex: 1.5, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320 }}>
+            <Typography variant="subtitle2" fontWeight="800" color="text.secondary" gutterBottom>WORKFLOW BOTTLENECKS</Typography>
+            <Box sx={{ height: 250, width: '100%', mt: 2 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart layout="vertical" data={[{name: 'Queue', Pending: stats.pending, 'For Payment': stats.forPayment, Processing: stats.processing}]} margin={{ top: 30, right: 30, left: -20, bottom: 20 }}>
                   <XAxis type="number" hide />
                   <YAxis dataKey="name" type="category" hide />
-                  <ChartTooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                  <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '12px', paddingBottom: '10px' }} />
-                  <Bar dataKey="Pending" stackId="a" fill="#f59e0b" radius={[4, 0, 0, 4]} barSize={30} />
-                  <Bar dataKey="Awaiting Payment" stackId="a" fill="#3b82f6" barSize={30} />
-                  <Bar dataKey="Processing" stackId="a" fill="#10b981" radius={[0, 4, 4, 0]} barSize={30} />
+                  <ChartTooltip />
+                  <Legend verticalAlign="top" iconType="circle" wrapperStyle={{ fontSize: '11px', paddingBottom: '20px' }} />
+                  <Bar dataKey="Pending" stackId="a" fill="#f59e0b" barSize={40} radius={[6,0,0,6]} />
+                  <Bar dataKey="For Payment" stackId="a" fill="#3b82f6" barSize={40} />
+                  <Bar dataKey="Processing" stackId="a" fill="#10b981" barSize={40} radius={[0,6,6,0]} />
                 </BarChart>
               </ResponsiveContainer>
             </Box>
-          </Grid>
+          </Box>
 
-        </Grid>
+        </Box>
       </Paper>
 
       {/* ==========================================
@@ -349,7 +332,7 @@ export default function Dashboard() {
                 color="primary" 
                 size="large"
                 sx={{ justifyContent: 'flex-start', py: 1.5, fontWeight: 'bold', borderRadius: 2 }}
-                onClick={() => navigate('/admin/announcements')}
+                onClick={() => navigate('/admin/broadcast-center')}
               >
                 📢 Post New Announcement
               </Button>
@@ -359,7 +342,7 @@ export default function Dashboard() {
                 color="primary" 
                 size="large"
                 sx={{ justifyContent: 'flex-start', py: 1.5, fontWeight: 'bold', borderRadius: 2 }}
-                onClick={() => navigate('/admin/residents')}
+                onClick={() => navigate('/admin/manage-residents')}
               >
                 👥 Verify New Residents
               </Button>
@@ -369,7 +352,7 @@ export default function Dashboard() {
                 color="primary" 
                 size="large"
                 sx={{ justifyContent: 'flex-start', py: 1.5, fontWeight: 'bold', borderRadius: 2 }}
-                onClick={() => navigate('/admin/settings')}
+                onClick={() => navigate('/admin/system-settings')}
               >
                 ⚙️ System Settings
               </Button>
