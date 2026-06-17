@@ -38,8 +38,6 @@ app.use((err, req, res, next) => {
 
 app.use(sqlSanitizer);
 
-app.use(cors({ origin: 'http://localhost:5173' }));
-
 // ==========================================
 // PHASE 1.1: DATABASE ENDPOINTS
 // ==========================================
@@ -53,6 +51,10 @@ app.post('/api/v1/setup/database', async (req, res) => {
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
+});
+
+app.get('/api/v1/health', (req, res) => {
+    res.status(200).json({ status: 'OK', uptime: process.uptime(), timestamp: new Date() });
 });
 
 app.get('/api/v1/health/db', async (req, res) => {
@@ -2194,27 +2196,34 @@ app.delete('/api/v1/admin/backups/:filename', verifyJWT, roleGuard(['Captain']),
 const cron = require('node-cron');
 const { createBackup, listBackups, deleteBackup } = require('./utils/backupRestore');
 
-cron.schedule('0 0 * * *', async () => {
-    console.log('[CRON] Starting scheduled daily backup...');
-    try {
-        const result = await createBackup();
-        console.log(`[CRON] Scheduled backup created: ${result.filename}`);
+// Guard to prevent duplicate cron jobs when running behind a load balancer or PM2 cluster
+const shouldRunCron = (process.env.NODE_APP_INSTANCE === undefined || process.env.NODE_APP_INSTANCE === '0') || process.env.RUN_CRON === 'true';
 
-        // Maintain last 7 backups (Rotate older files)
-        const backups = listBackups();
-        if (backups.length > 7) {
-            const olderBackups = backups.slice(7);
-            for (const oldBackup of olderBackups) {
-                deleteBackup(oldBackup.filename);
-                console.log(`[CRON] Rotated (deleted) old backup file: ${oldBackup.filename}`);
+if (shouldRunCron) {
+    cron.schedule('0 0 * * *', async () => {
+        console.log('[CRON] Starting scheduled daily backup...');
+        try {
+            const result = await createBackup();
+            console.log(`[CRON] Scheduled backup created: ${result.filename}`);
+
+            // Maintain last 7 backups (Rotate older files)
+            const backups = listBackups();
+            if (backups.length > 7) {
+                const olderBackups = backups.slice(7);
+                for (const oldBackup of olderBackups) {
+                    deleteBackup(oldBackup.filename);
+                    console.log(`[CRON] Rotated (deleted) old backup file: ${oldBackup.filename}`);
+                }
             }
+        } catch (error) {
+            console.error('[CRON ERROR] Scheduled daily backup failed:', error.message);
         }
-    } catch (error) {
-        console.error('[CRON ERROR] Scheduled daily backup failed:', error.message);
-    }
-});
+    });
+} else {
+    console.log('[CRON] Scheduled daily backup is disabled on this instance (running in clustered mode).');
+}
 
 // Start the server
-app.listen(PORT, () => {
-    console.log(`🚀 E-Serbisyo Server is running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 E-Serbisyo Server is running on http://0.0.0.0:${PORT}`);
 });

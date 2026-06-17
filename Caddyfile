@@ -1,20 +1,14 @@
-# Caddy configuration for E-Serbisyo local Split-Horizon DNS resolution.
-# Update the hostnames (portal.brgy143.gov.ph / api.brgy143.gov.ph) to match your custom local domain names.
-
-portal.brgy143.gov.ph {
-    # Reverse proxy to the local Vite client frontend
-    reverse_proxy localhost:5173
-
-    # Direct Caddy to issue and trust local self-signed TLS certificates.
-    # Note: On client devices, import Caddy's root CA certificate (root.crt)
-    # to avoid browser SSL warnings and enable webcam permissions.
-    tls internal
+# Frontend Proxy on Port 8080 (Any Hostname)
+:8080 {
+    reverse_proxy 127.0.0.1:5173
 }
 
-api.brgy143.gov.ph {
-    # Reverse proxy to the local Express backend API
-    reverse_proxy localhost:3000
-
-    # Issue and trust local self-signed TLS certificates.
-    tls internal
+# Load-Balanced API Proxy on Port 8081 (Any Hostname)
+:8081 {
+    reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
+        lb_policy round_robin
+        health_uri /api/v1/health
+        health_interval 5s
+        health_timeout 2s
+    }
 }

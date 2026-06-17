@@ -11,7 +11,7 @@ This document provides complete instructions for developers and administrators t
 4. [Verification & Manual Test Procedures](#-verification--manual-test-procedures)
 5. [Developer Customization Guide (Emails & Backups)](#-developer-customization-guide-emails--backups)
 6. [Technitium Split-Horizon DNS & Local SSL Proxy Setup](#-technitium-split-horizon-dns--local-ssl-proxy-setup)
-
+7. [Clustered Load Balancing Setup (Caddy & PM2)](#-clustered-load-balancing-setup-caddy--pm2)
 
 ---
 
@@ -243,3 +243,111 @@ To ensure all devices on the Barangay network automatically query your Technitiu
 3. Change the **Primary DNS Server (DNS 1)** value to your DNS server's local IP address (e.g., `192.168.1.100`).
 4. Set the **Secondary DNS Server (DNS 2)** to a public fallback (e.g., `1.1.1.1`).
 5. Save settings and restart the router. Devices will acquire the new DNS server IP next time they reconnect.
+
+---
+
+## ⚖️ Clustered Load Balancing Setup (Caddy & PM2)
+
+This section provides the configuration instructions for load balancing multiple Express backend processes on your single host machine. This distributes application processing across all available CPU cores, optimizing system performance.
+
+### 📋 Architectural Overview
+1. **PM2** runs and manages multiple instances of the Express app (`server.js`), utilizing the native Node.js cluster module.
+2. The processes listen on different ports (e.g., ports `3000` and `3001`).
+3. **Caddy** receives all traffic on `api.brgy143.gov.ph` and balances requests across the active ports using a Round Robin strategy.
+4. If one of the backend processes crashes or hangs, Caddy automatically routes traffic to the remaining healthy processes.
+
+---
+
+### 📦 Step 1: Install and Configure PM2
+Run the following in the backend server machine to handle process management:
+
+1. Install PM2 globally:
+   ```bash
+   npm install -g pm2
+   ```
+2. Create a file named `ecosystem.config.js` in your `server` directory:
+   ```javascript
+   module.exports = {
+     apps: [
+       {
+         name: "eserbisyo-backend-3000",
+         script: "./server.js",
+         env: {
+           PORT: "3000",
+           RUN_CRON: "true" // Only instance on port 3000 runs scheduled backups
+         }
+       },
+       {
+         name: "eserbisyo-backend-3001",
+         script: "./server.js",
+         env: {
+           PORT: "3001",
+           RUN_CRON: "false" // Port 3001 instance will run with backups disabled to avoid conflicts
+         }
+       }
+     ]
+   }
+   ```
+3. Start the servers with PM2:
+   ```bash
+   pm2 start ecosystem.config.js
+   ```
+4. Save the PM2 list and configure it to run on system startup:
+   ```bash
+   pm2 save
+   pm2 startup
+   ```
+
+---
+
+### 🔒 Step 2: Configure Caddy Load Balancing
+Update the `Caddyfile` located in your project root to balance incoming API traffic across ports `3000` and `3001`:
+
+```caddyfile
+portal.brgy143.gov.ph {
+    # Reverse proxy to local Vite development server or static build
+    reverse_proxy 127.0.0.1:5173
+    tls internal
+}
+
+api.brgy143.gov.ph {
+    # Load balance API traffic across active Node processes
+    reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
+        lb_policy round_robin
+        
+        # Continuous active health checking using the lightweight health probe
+        health_uri /api/v1/health
+        health_interval 5s
+        health_timeout 2s
+    }
+    tls internal
+}
+```
+
+---
+
+### 🧪 Step 3: Verification & Failover Test (1-Click Local Controller)
+
+To avoid manually setting up and managing four different terminals, we have created a unified 1-click controller script **[start-system.ps1](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.ps1)** at the project root.
+
+This script automatically:
+1. Downloads `caddy.exe` directly if it's missing from your project root.
+2. Cleans up any leftover Node/Caddy processes to prevent port lockups.
+3. Launches Backend A (Port 3000), Backend B (Port 3001), Vite Client, and Caddy proxy in minimized background windows.
+4. Executes HTTP health probes on each service.
+5. Prints a real-time status dashboard.
+
+#### Running the test:
+1. Double-click the **[start-system.bat](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.bat)** file in the project root directory. (Or run `start-system.bat` from Command Prompt).
+2. Once the diagnostic dashboard finishes scanning, open your browser and access the app:
+   * **Portal UI (Caddy)**: `http://localhost:8080`
+   * **API Gateway (Caddy Load-Balanced)**: `http://localhost:8081/api/v1/health`
+3. Refresh the health API page several times to see requests load balanced across ports `3000` and `3001`.
+4. **Clean up**: To shut down all background windows and proxy services, run:
+   ```powershell
+   Stop-Process -Name node,caddy -Force
+   ```
+
+
+
+
