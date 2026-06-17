@@ -118,8 +118,29 @@
         </div>
     </div>
 
+    <div class="section" style="background: #e2f0fe; border-left: 5px solid #007bff;">
+        <h2>🧪 Custom Integration Tests</h2>
+        
+        <div class="endpoint">
+            <span class="method post">POST</span> 
+            <strong>Email SMTP Tester</strong> - Send a real test email to verify settings<br>
+            <small>POST /api/v1/test/send-email</small><br>
+            <input type="email" id="testEmailTo" placeholder="recipient@example.com" style="width: 250px;">
+            <button onclick="testEmailSMTP()">Send Test Email</button>
+            <div id="result-test-email" class="result"></div>
+        </div>
+
+        <div class="endpoint">
+            <span class="method post">POST</span> 
+            <strong>QR Document Seeder</strong> - Seed verification database and generate test-qr.png<br>
+            <small>POST /api/v1/test/qr-seed</small><br>
+            <button onclick="seedQRVerification()">Seed & Generate test-qr.png</button>
+            <div id="result-test-qr" class="result"></div>
+        </div>
+    </div>
+
     <script>
-        const BASE_URL = 'http://localhost:5000/api/v1';
+        const BASE_URL = 'http://localhost:3000/api/v1';
         
         function getToken() {
             return document.getElementById('token').value;
@@ -281,6 +302,21 @@
         async function viewSettings() {
             const result = await apiRequest('GET', '/admin/settings');
             document.getElementById('result-settings').textContent = JSON.stringify(result, null, 2);
+        }
+
+        async function testEmailSMTP() {
+            const to = document.getElementById('testEmailTo').value;
+            if (!to) {
+                document.getElementById('result-test-email').textContent = 'Please enter a recipient email.';
+                return;
+            }
+            const result = await apiRequest('POST', '/test/send-email', { to });
+            document.getElementById('result-test-email').textContent = JSON.stringify(result, null, 2);
+        }
+
+        async function seedQRVerification() {
+            const result = await apiRequest('POST', '/test/qr-seed');
+            document.getElementById('result-test-qr').textContent = JSON.stringify(result, null, 2);
         }
     </script>
 </body>
