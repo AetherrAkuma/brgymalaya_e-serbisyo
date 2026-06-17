@@ -273,7 +273,7 @@ export default function Dashboard() {
               <Typography variant="h6" fontWeight="800" color="#0f172a" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <AssessmentIcon color="primary" /> Action Queue Preview
               </Typography>
-              <Button size="small" endIcon={<ArrowForwardIosIcon fontSize="small" />} onClick={() => navigate('/admin/master-queue')}>
+              <Button size="small" endIcon={<ArrowForwardIosIcon fontSize="small" />} onClick={() => navigate('/admin/requests')}>
                 View All
               </Button>
             </Box>
@@ -332,7 +332,7 @@ export default function Dashboard() {
                 color="primary" 
                 size="large"
                 sx={{ justifyContent: 'flex-start', py: 1.5, fontWeight: 'bold', borderRadius: 2 }}
-                onClick={() => navigate('/admin/broadcast-center')}
+                onClick={() => navigate('/admin/announcements')}
               >
                 📢 Post New Announcement
               </Button>
@@ -342,7 +342,7 @@ export default function Dashboard() {
                 color="primary" 
                 size="large"
                 sx={{ justifyContent: 'flex-start', py: 1.5, fontWeight: 'bold', borderRadius: 2 }}
-                onClick={() => navigate('/admin/manage-residents')}
+                onClick={() => navigate('/admin/residents')}
               >
                 👥 Verify New Residents
               </Button>
@@ -352,7 +352,7 @@ export default function Dashboard() {
                 color="primary" 
                 size="large"
                 sx={{ justifyContent: 'flex-start', py: 1.5, fontWeight: 'bold', borderRadius: 2 }}
-                onClick={() => navigate('/admin/system-settings')}
+                onClick={() => navigate('/admin/settings')}
               >
                 ⚙️ System Settings
               </Button>
