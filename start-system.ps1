@@ -1,16 +1,80 @@
 $ErrorActionPreference = "SilentlyContinue"
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────────
-$cloudflared = ".\cloudflared.exe"
+# ─── Locate cloudflared.exe (ONLY accept/search root folder, auto-download if missing) ───
+$cloudflared = Join-Path (Get-Location).Path "cloudflared.exe"
+
 if (-not (Test-Path $cloudflared)) {
-    $cloudflared = "C:\Program Files (x86)\cloudflared\cloudflared.exe"
-    if (-not (Test-Path $cloudflared)) {
-        $cloudflared = (Get-Command cloudflared -ErrorAction SilentlyContinue).Source
-        if (-not $cloudflared) {
-            Write-Host "[-] cloudflared.exe not found. Place it in the project root." -ForegroundColor Red
-            Exit
+    Write-Host "" 
+    Write-Host "=====================================================" -ForegroundColor Yellow
+    Write-Host "  cloudflared.exe not found in root folder." -ForegroundColor Yellow
+    Write-Host "=====================================================" -ForegroundColor Yellow
+
+    # Check if cloudflared is already installed elsewhere on the system so we can copy it to root
+    $tempPath = $null
+    $knownPaths = @(
+        "C:\Program Files (x86)\cloudflared\cloudflared.exe",
+        "C:\Program Files\cloudflared\cloudflared.exe",
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Cloudflare.cloudflared_Microsoft.Winget.Source_8wekyb3d8bbwe\cloudflared.exe"
+    )
+    foreach ($p in $knownPaths) {
+        if (Test-Path $p) {
+            $tempPath = $p
+            break
         }
     }
+    if (-not $tempPath) {
+        $inPath = (Get-Command cloudflared -ErrorAction SilentlyContinue).Source
+        if ($inPath) { $tempPath = $inPath }
+    }
+
+    if ($tempPath) {
+        Write-Host "[*] Found cloudflared installed on system at: $tempPath" -ForegroundColor Gray
+        Write-Host "[*] Copying cloudflared.exe to the root folder..." -ForegroundColor Gray
+        Copy-Item -Path $tempPath -Destination $cloudflared -Force
+    } else {
+        # Check if winget is available
+        if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+            Write-Host "[-] winget is not available on this machine." -ForegroundColor Red
+            Write-Host "    Please download cloudflared.exe manually and place it in the project root folder." -ForegroundColor Red
+            Read-Host "Press Enter to exit"
+            Exit
+        }
+
+        Write-Host "[*] Downloading and installing cloudflared via winget..." -ForegroundColor Gray
+        winget install --id Cloudflare.cloudflared -e --silent --accept-source-agreements --accept-package-agreements
+
+        # Refresh PATH in current session
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("PATH", "User")
+
+        # Find it again
+        foreach ($p in $knownPaths) {
+            if (Test-Path $p) {
+                $tempPath = $p
+                break
+            }
+        }
+        if (-not $tempPath) {
+            $inPath = (Get-Command cloudflared -ErrorAction SilentlyContinue).Source
+            if ($inPath) { $tempPath = $inPath }
+        }
+
+        if ($tempPath) {
+            Write-Host "[*] Copying downloaded cloudflared.exe to the root folder..." -ForegroundColor Gray
+            Copy-Item -Path $tempPath -Destination $cloudflared -Force
+        }
+    }
+
+    if (-not (Test-Path $cloudflared)) {
+        Write-Host "[-] cloudflared.exe could not be placed in the root folder." -ForegroundColor Red
+        Write-Host "    Please place cloudflared.exe manually in the root folder." -ForegroundColor Yellow
+        Read-Host "Press Enter to exit"
+        Exit
+    }
+
+    Write-Host "[+] cloudflared.exe successfully copied to the root folder." -ForegroundColor Green
+    Write-Host ""
 }
 
 Clear-Host
