@@ -1,21 +1,25 @@
 import { useState, useEffect } from 'react';
 import { 
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
-  TableHead, TableRow, Chip, Button, CircularProgress, Dialog, DialogTitle, 
-  DialogContent, DialogActions, Grid, TextField, InputAdornment, Tooltip
+  TableHead, TableRow, Chip, Button, Dialog, DialogTitle, 
+  DialogContent, DialogActions, Grid, TextField, InputAdornment, Tooltip, CircularProgress
 } from '@mui/material';
 
 // Icons
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import BlockIcon from '@mui/icons-material/Block';
+import CancelIcon from '@mui/icons-material/Cancel';
 import PendingIcon from '@mui/icons-material/Pending';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import SearchIcon from '@mui/icons-material/Search';
 import HowToRegIcon from '@mui/icons-material/HowToReg';
+import HighlightOffIcon from '@mui/icons-material/HighlightOff';
 
 import api from '../../utils/axios';
+import { useSnackbar } from '../../context/SnackbarContext.jsx';
 
 export default function ManageResidents() {
+  const showSnackbar = useSnackbar();
   const [residents, setResidents] = useState([]);
   const [filteredResidents, setFilteredResidents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,6 +32,8 @@ export default function ManageResidents() {
   
   // Secure Image Viewer State
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
 
   // --- ROLE-BASED ACCESS CONTROL ---
   const userRole = localStorage.getItem('role') || 'Official';
@@ -91,11 +97,29 @@ export default function ManageResidents() {
     try {
       await api.put(`/admin/residents/${selectedUser.resident_id}/status`, { account_status: newStatus });
       handleCloseModal();
-      fetchResidents(); // Refresh the table
+      fetchResidents();
+      showSnackbar(`Account status changed to ${newStatus}.`, "success");
     } catch (err) { 
-      alert(err.response?.data?.error || "Failed to update account status."); 
+      showSnackbar(err.response?.data?.error || "Failed to update account status.", "error"); 
     } finally { 
       setIsProcessing(false); 
+    }
+  };
+
+  const handleRejectRegistration = async () => {
+    if (!rejectReason.trim()) return showSnackbar("Please provide a reason.", "warning");
+    setIsProcessing(true);
+    try {
+      await api.put(`/admin/residents/${selectedUser.resident_id}/reject`, { rejection_reason: rejectReason });
+      setRejectDialogOpen(false);
+      setRejectReason('');
+      handleCloseModal();
+      fetchResidents();
+      showSnackbar("Registration rejected. Resident has been notified.", "success");
+    } catch (err) {
+      showSnackbar(err.response?.data?.error || "Failed to reject registration.", "error");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -222,6 +246,11 @@ export default function ManageResidents() {
                       No Identity Document uploaded.<br/>Account should not be activated.
                     </Typography>
                   )}
+                  {selectedUser.account_status === 'Pending' && selectedUser.id_proof_image && (
+                    <Typography variant="caption" color="#94a3b8" sx={{ mt: 1.5, textAlign: 'center', opacity: 0.75 }}>
+                      This ID proof is automatically deleted from the server after the configured retention period for data privacy compliance.
+                    </Typography>
+                  )}
                 </Grid>
 
               </Grid>
@@ -258,6 +287,19 @@ export default function ManageResidents() {
                   )}
                 </>
               )}
+
+              {/* REJECT REGISTRATION: For Pending residents */}
+              {selectedUser.account_status === 'Pending' && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={() => setRejectDialogOpen(true)}
+                  disabled={isProcessing}
+                  startIcon={<HighlightOffIcon />}
+                >
+                  Reject Registration
+                </Button>
+              )}
               
               {/* 🛡️ ADMIN, SECRETARY, CAPTAIN, SUPER ADMIN: Activate */}
               {canActivate && selectedUser.account_status !== 'Active' && (
@@ -273,7 +315,8 @@ export default function ManageResidents() {
                       color="success" 
                       onClick={() => handleUpdateStatus('Active')}
                       disabled={!selectedUser.id_proof_image || isProcessing}
-                      startIcon={<VerifiedUserIcon />}
+                      startIcon={isProcessing && selectedUser?.account_status === 'Pending' ? <CircularProgress size={20} color="inherit" /> : <VerifiedUserIcon />}
+                      className={isProcessing ? 'btn-loading' : ''}
                       sx={{ fontWeight: 'bold' }}
                     >
                       Approve & Activate
@@ -284,6 +327,29 @@ export default function ManageResidents() {
             </DialogActions>
           </>
         )}
+      </Dialog>
+
+      {/* REJECT REGISTRATION DIALOG */}
+      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <HighlightOffIcon color="error" /> Reject Registration
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            This resident's registration will be blocked. They will be notified via email with the reason below.
+          </Typography>
+          <TextField fullWidth required multiline rows={3} label="Reason for Rejection"
+            value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="e.g. Blurry or invalid ID, incomplete information..." variant="filled" />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setRejectDialogOpen(false)} color="inherit">Cancel</Button>
+          <Button variant="contained" color="error" onClick={handleRejectRegistration} disabled={isProcessing}
+            startIcon={isProcessing ? <CircularProgress size={18} color="inherit" /> : <HighlightOffIcon />}
+            className={isProcessing ? 'btn-loading' : ''} sx={{ fontWeight: 'bold' }}>
+            Confirm Rejection
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

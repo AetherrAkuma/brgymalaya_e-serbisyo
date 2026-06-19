@@ -36,23 +36,11 @@ This script inserts a dummy authentic document in your database and generates a 
 
 ---
 
-## 🧪 Test 3: Cloudflare Tunnel Verification
-This verifies exposing your local server to a public HTTPS URL (needed for mobile/webcam QR scanning).
+## 🧪 Test 3: Online Tunnel Verification
+This test verifies that the system can be exposed over the internet via Cloudflare Tunnel (needed for remote QR verification).
 
-1. Run the automated start script (recommended):
-   ```bash
-   start-system.bat
-   ```
-   The script automatically starts tunnels and updates `.env` files.
-
-2. Or manually expose just the backend:
-   ```bash
-   cd server
-   npm run tunnel
-   ```
-3. Copy the generated public URL (e.g. `https://random-name.trycloudflare.com`).
-4. Set your client's environment base URL to this public link by editing [client/.env](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/client/.env):
-   ```env
-   VITE_API_BASE_URL=https://<your-copied-url>/api/v1
-   ```
-5. Now, any network requests made by the frontend will point securely to the public tunnel endpoint!
+1. Run `start-system.bat` — it automatically starts two tunnels.
+2. Wait for the tunnel URLs to appear in the console (may take up to 90 seconds).
+3. Open the **Public App** URL on any device with internet — the frontend should load over HTTPS.
+4. Open the **Public API** URL — `/api/v1/health` should return a JSON health status.
+5. The tunnel URLs change each restart; the script handles this automatically.

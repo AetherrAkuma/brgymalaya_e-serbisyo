@@ -34,5 +34,5 @@ yarn-error.log*
 # Upload Folder
 server/uploads/*
 
-# Caddy Executable
-caddy.exe
+# Cloudflare Tunnel binary (place in root)
+cloudflared.exe

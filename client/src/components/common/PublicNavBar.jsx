@@ -1,6 +1,7 @@
 import { AppBar, Toolbar, Typography, Button, Box, Container } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import QrCodeIcon from '@mui/icons-material/QrCode';
 
 export default function PublicNavbar() {
   const navigate = useNavigate();
@@ -20,16 +21,29 @@ export default function PublicNavbar() {
             </Typography>
           </Box>
 
-          {/* Login / Portal Button */}
-          <Button 
-            variant="contained" 
-            color="primary" 
-            startIcon={<AccountCircleIcon />}
-            onClick={() => navigate('/login')}
-            sx={{ borderRadius: 20, px: 3 }}
-          >
-            E-Serbisyo Portal
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            {/* Verify Document Button */}
+            <Button 
+              variant="outlined" 
+              color="primary" 
+              startIcon={<QrCodeIcon />}
+              onClick={() => navigate('/verify')}
+              sx={{ borderRadius: 20, px: 3, fontWeight: 'bold' }}
+            >
+              Verify QR Code
+            </Button>
+
+            {/* Login / Portal Button */}
+            <Button 
+              variant="contained" 
+              color="primary" 
+              startIcon={<AccountCircleIcon />}
+              onClick={() => navigate('/login')}
+              sx={{ borderRadius: 20, px: 3 }}
+            >
+              E-Serbisyo Portal
+            </Button>
+          </Box>
 
         </Toolbar>
       </Container>

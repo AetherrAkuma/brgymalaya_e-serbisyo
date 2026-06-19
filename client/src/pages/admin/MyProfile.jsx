@@ -12,11 +12,14 @@ import HistoryEduIcon from '@mui/icons-material/HistoryEdu'; // Signature Icon
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
 import api from '../../utils/axios';
+import { useSnackbar } from '../../context/SnackbarContext.jsx';
 
 export default function MyProfile() {
+  const showSnackbar = useSnackbar();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
+  const [pwLoading, setPwLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   
   // Signature States
@@ -52,18 +55,20 @@ export default function MyProfile() {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    if (passwords.new !== passwords.confirm) return setMessage({ type: 'error', text: 'Passwords do not match' });
+    if (passwords.new !== passwords.confirm) return showSnackbar("Passwords do not match.", "warning");
+    setPwLoading(true);
     try {
       await api.put('/admin/profile/password', { current_password: passwords.current, new_password: passwords.new });
-      setMessage({ type: 'success', text: 'Password updated successfully!' });
+      showSnackbar("Password updated successfully!", "success");
       setPasswords({ current: '', new: '', confirm: '' });
-    } catch (err) { setMessage({ type: 'error', text: err.response?.data?.error || 'Failed' }); }
+    } catch (err) { showSnackbar(err.response?.data?.error || 'Failed to update password.', "error"); }
+    finally { setPwLoading(false); }
   };
 
   // --- THE RAW BINARY UPLOADER ---
   const handleSignatureUpload = async (e) => {
     const file = e.target.files[0];
-    if (!file || file.type !== 'image/png') return alert("Please upload a transparent PNG signature.");
+    if (!file || file.type !== 'image/png') return showSnackbar("Please upload a transparent PNG signature.", "warning");
 
     setUploadingSig(true);
     try {
@@ -78,7 +83,7 @@ export default function MyProfile() {
       setMessage({ type: 'success', text: 'Digital Signature securely vaulted.' });
       fetchSignature(); // Refresh preview
     } catch (err) {
-      alert("Upload failed. Ensure the file is a PNG under 2MB.");
+      showSnackbar("Upload failed. Ensure the file is a PNG under 2MB.", "error");
     } finally {
       setUploadingSig(false);
     }
@@ -144,14 +149,13 @@ export default function MyProfile() {
 
             <Paper elevation={0} sx={{ p: 4, borderRadius: 4, border: '1px solid #e2e8f0' }}>
               <Typography variant="h6" fontWeight="bold" sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}><SecurityIcon color="primary" /> Security</Typography>
-              {message.text && <Alert severity={message.type} sx={{ mb: 3 }} onClose={() => setMessage({ type: '', text: '' })}>{message.text}</Alert>}
               <form onSubmit={handlePasswordChange}>
                 <Stack spacing={3}>
                   <TextField fullWidth type="password" label="Current Password" required value={passwords.current} onChange={(e) => setPasswords({...passwords, current: e.target.value})} />
                   <Divider />
                   <TextField fullWidth type="password" label="New Password" required value={passwords.new} onChange={(e) => setPasswords({...passwords, new: e.target.value})} />
                   <TextField fullWidth type="password" label="Confirm New Password" required value={passwords.confirm} onChange={(e) => setPasswords({...passwords, confirm: e.target.value})} />
-                  <Button type="submit" variant="contained" startIcon={<VpnKeyIcon />} sx={{ alignSelf: 'flex-start', px: 4, py: 1.2, borderRadius: 2 }}>Update Password</Button>
+                  <Button type="submit" variant="contained" startIcon={pwLoading ? <CircularProgress size={20} color="inherit" /> : <VpnKeyIcon />} disabled={pwLoading} className={pwLoading ? 'btn-loading' : ''} sx={{ alignSelf: 'flex-start', px: 4, py: 1.2, borderRadius: 2 }}>{pwLoading ? 'Updating...' : 'Update Password'}</Button>
                 </Stack>
               </form>
             </Paper>

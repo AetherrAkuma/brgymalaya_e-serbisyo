@@ -10,8 +10,8 @@ This document provides complete instructions for developers and administrators t
 3. [Environment Configuration & Setup](#-environment-configuration--setup)
 4. [Verification & Manual Test Procedures](#-verification--manual-test-procedures)
 5. [Developer Customization Guide (Emails & Backups)](#-developer-customization-guide-emails--backups)
-6. [Technitium Split-Horizon DNS Setup](#-technitium-split-horizon-dns-setup)
-7. [Cloudflare Tunnel Setup (Public HTTPS Access)](#-cloudflare-tunnel-setup-public-https-access)
+6. [Technitium Split-Horizon DNS & Local SSL Setup (Caddy)](#-technitium-split-horizon-dns--local-ssl-setup-caddy)
+7. [Future Deployment: Public Online Access](#-future-deployment-public-online-access)
 
 ---
 
@@ -168,16 +168,49 @@ cron.schedule('0 0 * * *', async () => {
 
 ---
 
-## 🌐 Technitium Split-Horizon DNS Setup
+## 🌐 Deployment Modes
 
-This section details how to configure local DNS resolution inside the Barangay Hall Local Area Network (LAN) using **Technitium DNS Server**.
+The system supports two deployment modes as documented in the project architecture:
+
+### Mode A: Local LAN (Offline) — Current
+
+The system runs locally within the Barangay Hall LAN over HTTP. No internet, domain, or certificates required.
+
+| Service | Port | URL |
+| :--- | :--- | :--- |
+| **Backend API** | 3000 | `http://localhost:3000` or `http://<server-ip>:3000` |
+| **Frontend Portal** | 5173 | `http://localhost:5173` or `http://<server-ip>:5173` |
+
+Run: double-click **`start-system.bat`** at the project root.
+
+> `localhost` is considered a secure context by browsers — camera/QR scanning works on the server machine even over HTTP.
+
+### Mode B: Online Tunnel (Future) — Cloudflare
+
+The system is exposed over the internet using **Cloudflare Quick Tunnel** — no domain or account required.
+
+Double-click **`start-system.bat`** — it will:
+1. Start the backend (port 3000)
+2. Start a Cloudflare Quick Tunnel for the backend → detects the `*.trycloudflare.com` URL
+3. Start the frontend (port 5173) with the backend tunnel URL pre-configured
+4. Start a Cloudflare Quick Tunnel for the frontend
+5. Display both public URLs
+
+The tunnel URLs change each restart — the script handles this automatically.
+
+---
+
+## Technitium Split-Horizon DNS Setup (For Local LAN)
+
+This section details how to configure local DNS resolution inside the Barangay Hall LAN using **Technitium DNS Server**.
 
 ### 📋 Architectural Overview
 When a device connects to the Barangay Hall Wi-Fi or Ethernet switches:
 1. It queries **Technitium DNS** for `portal.brgy143.gov.ph`.
-2. Technitium DNS resolves it directly to the local server's private IP (`192.168.1.100`) rather than querying public root servers.
-3. The client browser connects to the private IP over HTTP.
-4. The Express backend (port 3000) and Vite frontend (port 5173) serve the application directly.
+2. Technitium DNS resolves it directly to the local server's private IP (`192.168.1.100`).
+3. Users access the system via HTTP directly on the backend (port 3000) and frontend (port 5173).
+
+This setup works **100% offline** — no internet or domain registration required.
 
 ---
 
@@ -203,24 +236,35 @@ Once physically at the Barangay Hall:
 
 ### 🔒 Step 2: Access Methods
 
-Since the system is served over HTTP locally, here are your options for HTTPS (required for camera/QR scanning):
+The system runs on **HTTP** directly on its ports — no reverse proxy or certificates needed for local LAN.
 
-#### Option A: Local Machine Access
-Open `http://localhost:5173` directly on the server PC. `localhost` is considered a secure context by browsers, so camera access will work.
+| Service | Port | URL |
+| :--- | :--- | :--- |
+| **Backend API** | 3000 | `http://localhost:3000` or `http://<server-ip>:3000` |
+| **Frontend Portal** | 5173 | `http://localhost:5173` or `http://<server-ip>:5173` |
 
-#### Option B: LAN Access via Cloudflare Quick Tunnel
-Run the tunnel (see Section 7) and access the system via the generated `https://*.trycloudflare.com` URL from any LAN device.
+For LAN devices, use the server's local IP address (e.g., `http://192.168.1.100:5173`).
 
-#### Option C: LAN Access via Self-Signed Certificate (Advanced)
-If you prefer local HTTPS without a public tunnel, use `mkcert`:
-1. Install mkcert from [https://github.com/FiloSottile/mkcert](https://github.com/FiloSottile/mkcert)
-2. Run: `mkcert -install`
-3. Generate certs: `mkcert portal.brgy143.gov.ph api.brgy143.gov.ph localhost`
-4. Configure your reverse proxy (or Express/Vite) to use the generated `.pem` files.
+> **Note:** `localhost` is considered a secure context by browsers, so camera/QR scanning works on the server machine even over HTTP.
 
 ---
 
-### 📶 Step 3: Router/DHCP Configuration
+### 🚀 Step 3: Starting the System
+
+Double-click **`start-system.bat`** at the project root. This will:
+1. Start the backend (port 3000)
+2. Start the Vite frontend (port 5173)
+3. Display health status and access URLs
+
+Access the system at:
+| Service | URL |
+| :--- | :--- |
+| **Frontend** | `http://localhost:5173` |
+| **API** | `http://localhost:3000/api/v1` |
+
+---
+
+### 📶 Step 4: Router/DHCP Configuration
 To ensure all devices on the Barangay network automatically query your Technitium DNS server:
 1. Log in to your local router's admin panel (usually `http://192.168.1.1` or `http://192.168.0.1`).
 2. Locate the **DHCP Server Settings**.
@@ -230,67 +274,12 @@ To ensure all devices on the Barangay network automatically query your Technitiu
 
 ---
 
-## 🌐 Cloudflare Tunnel Setup (Public HTTPS Access)
+## Environment Variables Matrix
 
-This section covers exposing your local E-Serbisyo system to the internet (or LAN devices) using **Cloudflare Tunnel (Quick Tunnel)** — no domain or account required.
-
-### 📋 Architectural Overview
-1. **Cloudflared** establishes a secure outbound tunnel from your server to Cloudflare's edge.
-2. Cloudflare provides a public HTTPS URL (`https://<random>.trycloudflare.com`).
-3. The tunnel forwards requests to your local backend (port 3000) and frontend (port 5173).
-
----
-
-### 📦 Step 1: Install Cloudflared
-If not already installed:
-```powershell
-winget install --id Cloudflare.cloudflared
-```
-Or download the MSI from [github.com/cloudflare/cloudflared/releases](https://github.com/cloudflare/cloudflared/releases).
-
-> After installation, if `cloudflared` is not recognized in your terminal, add `C:\Program Files (x86)\cloudflared` to your system PATH or use the full path: `"C:\Program Files (x86)\cloudflared\cloudflared.exe"`.
-
----
-
-### 🚀 Step 2: Start the System with Tunnel
-Simply double-click **[start-system.bat](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.bat)** at the project root.
-
-This will:
-1. Start the backend (port 3000)
-2. Start the Vite frontend (port 5173)
-3. Launch two Cloudflare Quick Tunnels — one for the API, one for the frontend
-4. Detect the generated tunnel URLs
-5. Automatically update `.env` files with the new public URLs
-6. Display the access URLs in the console
-
-> **Note:** Tunnel URLs change every time you restart. The script handles this automatically.
-
----
-
-### 🖐️ Step 3: Manual Tunnel (One Service at a Time)
-If you only need to expose the backend (for API calls):
-```powershell
-cd server
-npm run tunnel
-```
-
----
-
-### 🌐 Step 4: Environment Variables Matrix
-Ensure your frontend and backend configuration variables match your deployment mode:
-
-| Deployment Mode | Client Base API URL (`client/.env`) | Server Verification URL (`server/.env`) |
+| Mode | Client Base API URL (`client/.env`) | Server Verification URL (`server/.env`) |
 | :--- | :--- | :--- |
-| **Local (Server PC)** | `http://localhost:3000/api/v1` | `http://localhost:5173/verify` |
-| **LAN / Public (Tunnel)** | Auto-updated by `start-system.ps1` | Auto-updated by `start-system.ps1` |
-
----
-
-### 🔑 Step 5: Access from Other LAN Devices
-1. Run the system using `start-system.bat`.
-2. Wait for the tunnel URLs to appear in the console.
-3. From any device on the same network (or anywhere in the world), open the **Public Portal** URL.
-4. The tunnel URL is HTTPS, so camera/QR scanning works on all devices.
+| **Local LAN** | `http://localhost:3000/api/v1` | `http://localhost:5173/verify` |
+| **Online Tunnel** | Auto-injected by `start-system.ps1` | Auto-updated by `start-system.ps1` |
 
 
 

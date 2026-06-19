@@ -16,8 +16,10 @@ import BadgeIcon from '@mui/icons-material/Badge';
 
 // Modular import from our new utility file
 import api from '../../utils/axios';
+import { useSnackbar } from '../../context/SnackbarContext.jsx';
 
 export default function ManageOfficials() {
+  const showSnackbar = useSnackbar();
   const [officials, setOfficials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -59,8 +61,9 @@ export default function ManageOfficials() {
       setModalOpen(false);
       setFormData({ official_id: '', full_name: '', email_official: '', username: '', password: '', role: 'Secretary' });
       fetchOfficials();
+      showSnackbar("Official account created successfully.", "success");
     } catch (err) {
-      alert(err.response?.data?.error || "Failed to create account.");
+      showSnackbar(err.response?.data?.error || "Failed to create account.", "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -73,7 +76,7 @@ export default function ManageOfficials() {
       await api.put(`/admin/officials/${id}/status`, { account_status: nextStatus });
       fetchOfficials();
     } catch (err) {
-      alert("Failed to update status. Check permissions.");
+      showSnackbar("Failed to update status. Check permissions.", "error");
     }
   };
 
@@ -85,7 +88,7 @@ export default function ManageOfficials() {
         await api.delete(`/admin/officials/${id}`);
         fetchOfficials();
       } catch (err) {
-        alert(err.response?.data?.error || "Deletion failed. Ensure you are not deleting your own logged-in account.");
+        showSnackbar(err.response?.data?.error || "Deletion failed. Ensure you are not deleting your own logged-in account.", "error");
       }
     }
   };
@@ -247,6 +250,8 @@ export default function ManageOfficials() {
             variant="contained" 
             onClick={handleCreate} 
             disabled={isSubmitting || !formData.official_id || !formData.username || !formData.password}
+            startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : null}
+            className={isSubmitting ? 'btn-loading' : ''}
             sx={{ fontWeight: 'bold', px: 4, borderRadius: '8px' }}
           >
             {isSubmitting ? 'Provisioning Access...' : 'Register Official Account'}

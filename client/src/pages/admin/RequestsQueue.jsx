@@ -21,13 +21,15 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import FilterListIcon from '@mui/icons-material/FilterList';
 
 import api from '../../utils/axios';
+import { useSnackbar } from '../../context/SnackbarContext.jsx';
 
 export default function RequestsQueue() {
+  const showSnackbar = useSnackbar();
   const theme = useTheme();
   const [requests, setRequests] = useState([]);
   const [filteredRequests, setFilteredRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingAction, setProcessingAction] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   
   // Modal States
@@ -100,12 +102,12 @@ export default function RequestsQueue() {
       const response = await api.get(`/admin/view-file/${filename}`, { responseType: 'blob' });
       setPreviewUrl(URL.createObjectURL(response.data));
       setPreviewType(filename.toLowerCase().includes('.pdf') ? 'pdf' : 'image');
-    } catch (err) { alert("Access Denied: Could not decrypt sensitive document."); }
+    } catch (err) { showSnackbar("Access Denied: Could not decrypt sensitive document.", "error"); }
   };
 
   const handleVerify = async (action) => {
-    if (action === 'Reject' && !rejectionReason.trim()) return alert("Please provide a reason.");
-    setIsProcessing(true);
+    if (action === 'Reject' && !rejectionReason.trim()) return showSnackbar("Please provide a reason.", "warning");
+    setProcessingAction('verify');
     try {
       await api.put(`/requests/${selectedReq.request_id}/verify`, { 
         action, 
@@ -113,13 +115,14 @@ export default function RequestsQueue() {
       });
       handleCloseAll();
       fetchRequests();
-    } catch (err) { alert("Processing failed."); } 
-    finally { setIsProcessing(false); }
+      showSnackbar(`Request ${action === 'Approve' ? 'approved' : 'rejected'} successfully.`, "success");
+    } catch (err) { showSnackbar(err.response?.data?.message || "Processing failed.", "error"); } 
+    finally { setProcessingAction(null); }
   };
 
   const handleProcessPayment = async () => {
-    if (!paymentData.or_number || !paymentData.amount_received) return alert("Required fields missing.");
-    setIsProcessing(true);
+    if (!paymentData.or_number || !paymentData.amount_received) return showSnackbar("Required fields missing.", "warning");
+    setProcessingAction('payment');
     try {
       await api.put(`/payments/${selectedReq.request_id}`, {
         or_number: paymentData.or_number,
@@ -127,12 +130,13 @@ export default function RequestsQueue() {
       });
       handleCloseAll();
       fetchRequests();
-    } catch (err) { alert(err.response?.data?.message || "Payment encoding failed."); } 
-    finally { setIsProcessing(false); }
+      showSnackbar("Payment recorded successfully.", "success");
+    } catch (err) { showSnackbar(err.response?.data?.message || "Payment encoding failed.", "error"); } 
+    finally { setProcessingAction(null); }
   };
 
   const handlePrintPDF = async (id, refNo) => {
-    setIsProcessing(true);
+    setProcessingAction('print');
     try {
       const res = await api.get(`/requests/${id}/generate-pdf`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
@@ -143,17 +147,18 @@ export default function RequestsQueue() {
       link.click();
       document.body.removeChild(link);
     } catch (err) { 
-        alert("Print Error: Ensure the template and signature are vaulted in the Catalog."); 
-    } finally { setIsProcessing(false); }
+        showSnackbar("Print Error: Ensure the template and signature are vaulted in the Catalog.", "error"); 
+    } finally { setProcessingAction(null); }
   };
 
   const handleUpdateStatus = async (id, endpoint) => {
-    setIsProcessing(true);
+    setProcessingAction(endpoint);
     try {
       await api.put(`/requests/${id}/${endpoint}`);
       fetchRequests();
-    } catch (err) { alert("Update failed."); } 
-    finally { setIsProcessing(false); }
+      showSnackbar(`Status updated successfully.`, "success");
+    } catch (err) { showSnackbar(err.response?.data?.message || "Update failed.", "error"); } 
+    finally { setProcessingAction(null); }
   };
 
   const getStatusChip = (status) => {
@@ -251,29 +256,29 @@ export default function RequestsQueue() {
                     
                     {/* Role & Status Based Workflow */}
                     {row.request_status === 'Pending' && isSecretaryOrAdmin && (
-                        <Button variant="contained" color="warning" size="small" onClick={() => handleOpenReview(row)} sx={{ borderRadius: '8px', fontWeight: 'bold', px: 2 }}>Review</Button>
+                        <Button variant="contained" color="warning" size="small" onClick={() => handleOpenReview(row)} disabled={!!processingAction} sx={{ borderRadius: '8px', fontWeight: 'bold', px: 2 }}>Review</Button>
                     )}
 
                     {row.request_status === 'For Payment' && isTreasurerOrAdmin && (
-                        <Button variant="contained" color="info" size="small" startIcon={<PaymentsOutlinedIcon />} onClick={() => { setSelectedReq(row); setPaymentModalOpen(true); }} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                        <Button variant="contained" color="info" size="small" startIcon={<PaymentsOutlinedIcon />} onClick={() => { setSelectedReq(row); setPaymentModalOpen(true); }} disabled={!!processingAction} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
                             Collect
                         </Button>
                     )}
 
                     {row.request_status === 'Processing' && isSecretaryOrAdmin && (
                         <>
-                            <Button variant="contained" size="small" sx={{ bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' }, borderRadius: '8px', fontWeight: 'bold' }} startIcon={<PrintIcon />} onClick={() => handlePrintPDF(row.request_id, row.reference_no)} disabled={isProcessing}>
-                                Print
+                            <Button variant="contained" size="small" sx={{ bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' }, borderRadius: '8px', fontWeight: 'bold' }} startIcon={processingAction === 'print' ? <CircularProgress size={18} color="inherit" /> : <PrintIcon />} onClick={() => handlePrintPDF(row.request_id, row.reference_no)} disabled={!!processingAction} className={processingAction === 'print' ? 'btn-loading' : ''}>
+                                {processingAction === 'print' ? 'Printing...' : 'Print'}
                             </Button>
-                            <Button variant="contained" size="small" color="primary" startIcon={<TaskAltIcon />} onClick={() => handleUpdateStatus(row.request_id, 'ready')} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
-                                Mark Ready
+                            <Button variant="contained" size="small" color="primary" startIcon={processingAction === 'ready' ? <CircularProgress size={18} color="inherit" /> : <TaskAltIcon />} onClick={() => handleUpdateStatus(row.request_id, 'ready')} disabled={!!processingAction} className={processingAction === 'ready' ? 'btn-loading' : ''} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                                {processingAction === 'ready' ? 'Updating...' : 'Mark Ready'}
                             </Button>
                         </>
                     )}
 
                     {row.request_status === 'Ready for Pickup' && isSecretaryOrAdmin && (
-                        <Button variant="contained" size="small" color="success" startIcon={<AssignmentTurnedInIcon />} onClick={() => handleUpdateStatus(row.request_id, 'issue')} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
-                            Final Issue
+                        <Button variant="contained" size="small" color="success" startIcon={processingAction === 'issue' ? <CircularProgress size={18} color="inherit" /> : <AssignmentTurnedInIcon />} onClick={() => handleUpdateStatus(row.request_id, 'issue')} disabled={!!processingAction} className={processingAction === 'issue' ? 'btn-loading' : ''} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                            {processingAction === 'issue' ? 'Issuing...' : 'Final Issue'}
                         </Button>
                     )}
 
@@ -349,8 +354,8 @@ export default function RequestsQueue() {
                 <Button onClick={handleCloseAll} color="inherit" sx={{ fontWeight: 'bold' }}>Close Window</Button>
                 {selectedReq.request_status === 'Pending' && isSecretaryOrAdmin && (
                     <>
-                        <Button color="error" startIcon={<HighlightOffIcon />} onClick={() => setRejectDialogOpen(true)} sx={{ fontWeight: 'bold' }}>Reject</Button>
-                        <Button variant="contained" color="success" onClick={() => handleVerify('Approve')} sx={{ fontWeight: 'bold', px: 4, borderRadius: 2 }}>Verify & Approve</Button>
+                        <Button color="error" startIcon={processingAction === 'verify' ? <CircularProgress size={18} color="inherit" /> : <HighlightOffIcon />} onClick={() => setRejectDialogOpen(true)} disabled={!!processingAction} className={processingAction === 'verify' ? 'btn-loading' : ''} sx={{ fontWeight: 'bold' }}>Reject</Button>
+                        <Button variant="contained" color="success" startIcon={processingAction === 'verify' ? <CircularProgress size={18} color="inherit" /> : null} onClick={() => handleVerify('Approve')} disabled={!!processingAction} className={processingAction === 'verify' ? 'btn-loading' : ''} sx={{ fontWeight: 'bold', px: 4, borderRadius: 2 }}>Verify & Approve</Button>
                     </>
                 )}
             </DialogActions>
@@ -366,8 +371,8 @@ export default function RequestsQueue() {
             <TextField fullWidth multiline rows={3} value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} placeholder="e.g. ID is expired or blurry, invalid purpose..." variant="filled" sx={{ borderRadius: 2 }} />
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-            <Button onClick={() => setRejectDialogOpen(false)}>Cancel</Button>
-            <Button variant="contained" color="error" onClick={() => handleVerify('Reject')}>Confirm Rejection</Button>
+            <Button onClick={() => setRejectDialogOpen(false)} disabled={!!processingAction}>Cancel</Button>
+            <Button variant="contained" color="error" startIcon={processingAction === 'verify' ? <CircularProgress size={18} color="inherit" /> : null} onClick={() => handleVerify('Reject')} disabled={!!processingAction} className={processingAction === 'verify' ? 'btn-loading' : ''}>Confirm Rejection</Button>
         </DialogActions>
       </Dialog>
 
@@ -406,10 +411,12 @@ export default function RequestsQueue() {
                     <Button 
                         variant="contained" color="success" size="large" fullWidth
                         onClick={handleProcessPayment} 
-                        disabled={changeDue < 0 || !paymentData.or_number || isProcessing}
+                        disabled={changeDue < 0 || !paymentData.or_number || !!processingAction}
+                        startIcon={processingAction === 'payment' ? <CircularProgress size={20} color="inherit" /> : null}
+                        className={processingAction === 'payment' ? 'btn-loading' : ''}
                         sx={{ fontWeight: 'bold', borderRadius: 3 }}
                     >
-                        Confirm Payment & Process
+                        {processingAction === 'payment' ? 'Processing...' : 'Confirm Payment & Process'}
                     </Button>
                 </DialogActions>
             </>

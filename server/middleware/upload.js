@@ -1,10 +1,11 @@
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
-// Use memory storage so we get the file buffer directly in RAM.
-// We DO NOT want multer to save the file automatically because it would save it unencrypted.
+// ─── Instance 1: Sensitive Files (ID proofs, supporting docs, templates) ───
+// Uses memory storage so we get the buffer and encrypt it before saving.
 const storage = multer.memoryStorage();
 
-// Limit file size to 5MB and restrict to common image types / PDFs
 const fileFilter = (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
     if (allowedTypes.includes(file.mimetype)) {
@@ -20,4 +21,32 @@ const upload = multer({
     fileFilter: fileFilter
 });
 
-module.exports = upload;
+// ─── Instance 2: Announcement Images (Public, NOT encrypted) ───
+// Uses diskStorage since announcement images are public content (no sensitive data).
+const announcementImageDir = path.join(__dirname, '..', 'uploads', 'announcements');
+if (!fs.existsSync(announcementImageDir)) fs.mkdirSync(announcementImageDir, { recursive: true });
+
+const announcementStorage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, announcementImageDir),
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, `announcement_${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+    }
+});
+
+const announcementFileFilter = (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Only JPG, PNG, and WebP image files are allowed for announcements.'), false);
+    }
+};
+
+const uploadAnnouncement = multer({
+    storage: announcementStorage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB limit
+    fileFilter: announcementFileFilter
+});
+
+module.exports = { upload, uploadAnnouncement };

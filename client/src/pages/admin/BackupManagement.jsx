@@ -143,12 +143,13 @@ export default function BackupManagement() {
         <Typography variant="h4" fontWeight="bold">Backup & System Recovery</Typography>
         <Button 
           variant="contained" 
-          startIcon={<BackupIcon />} 
+          startIcon={actionLoading ? <CircularProgress size={20} color="inherit" /> : <BackupIcon />} 
           onClick={handleCreateBackup}
           disabled={actionLoading || loading}
+          className={actionLoading ? 'btn-loading' : ''}
           sx={{ py: 1.2, px: 3, fontWeight: 'bold', borderRadius: 2 }}
         >
-          Create New Backup
+          {actionLoading ? 'Creating...' : 'Create New Backup'}
         </Button>
       </Stack>
 

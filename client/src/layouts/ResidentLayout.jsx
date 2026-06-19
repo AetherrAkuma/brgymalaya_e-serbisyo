@@ -12,6 +12,7 @@ import FolderIcon from '@mui/icons-material/Folder';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
+import QrCodeIcon from '@mui/icons-material/QrCode';
 
 const drawerWidth = 260;
 
@@ -36,10 +37,10 @@ export default function ResidentLayout() {
     navigate('/login');
   };
 
-  // Define the navigation menu items
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/resident/dashboard' },
     { text: 'My Requests', icon: <FolderIcon />, path: '/resident/requests' },
+    { text: 'Verify Document', icon: <QrCodeIcon />, path: '/resident/verify' },
     { text: 'My Profile', icon: <PersonIcon />, path: '/resident/profile' },
   ];
 

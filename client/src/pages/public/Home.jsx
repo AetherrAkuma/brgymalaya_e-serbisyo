@@ -109,6 +109,13 @@ export default function Home() {
     return url.startsWith('http') ? url : `https://${url}`;
   };
 
+  const resolveImageUrl = (imgPath) => {
+    if (!imgPath) return null;
+    if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) return imgPath;
+    const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api/v1').replace('/api/v1', '');
+    return `${base}${imgPath}`;
+  };
+
   return (
     <Box sx={{ bgcolor: '#f8fafc', minHeight: '100vh', overflowX: 'hidden' }}>
       
@@ -172,13 +179,20 @@ export default function Home() {
                   <Box key={news.announcement_id} sx={{ minWidth: '100%', display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
                     
                     {/* Left Side: The Image */}
-                    <Box sx={{ width: { xs: '100%', md: '50%' }, bgcolor: '#f1f5f9' }}>
-                      <CardMedia 
-                        component="img" 
-                        image={news.image_path || 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?q=80&w=800&auto=format&fit=crop'} // Fallback if no image
-                        alt={news.title}
-                        sx={{ height: '100%', minHeight: { xs: 250, md: 450 }, objectFit: 'cover' }} 
-                      />
+                    <Box sx={{ width: { xs: '100%', md: '50%' }, bgcolor: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                      {resolveImageUrl(news.image_path) ? (
+                        <CardMedia 
+                          component="img" 
+                          image={resolveImageUrl(news.image_path)}
+                          alt={news.title}
+                          sx={{ height: '100%', minHeight: { xs: 250, md: 450 }, objectFit: 'cover' }} 
+                        />
+                      ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, color: '#475569', p: 4, minHeight: { xs: 250, md: 450 } }}>
+                          <CampaignOutlinedIcon sx={{ fontSize: 64, opacity: 0.2 }} />
+                          <Typography variant="caption" sx={{ opacity: 0.4 }}>No image attached</Typography>
+                        </Box>
+                      )}
                     </Box>
 
                     {/* Right Side: The Description Box & Controls */}

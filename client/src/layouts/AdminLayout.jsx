@@ -19,6 +19,7 @@ import FolderSpecialIcon from '@mui/icons-material/FolderSpecial';
 import HistoryIcon from '@mui/icons-material/History';
 import GroupsIcon from '@mui/icons-material/Groups';
 import BackupIcon from '@mui/icons-material/Backup';
+import QrCodeIcon from '@mui/icons-material/QrCode';
 import ForcePasswordChange from '../pages/admin/ForcePasswordChange';
 
 const drawerWidth = 260;
@@ -40,74 +41,100 @@ export default function AdminLayout() {
     navigate('/login');
   };
 
-  // --- DYNAMIC NAVIGATION LOGIC ---
-  const menuItems = [
-    { 
-      text: 'Command Center', 
-      icon: <DashboardIcon />, 
-      path: '/admin/dashboard', 
-      visible: true 
+  // --- DYNAMIC NAVIGATION LOGIC (GROUPED BY CATEGORY) ---
+  const menuGroups = [
+    {
+      title: 'Operations',
+      items: [
+        { 
+          text: 'Command Center', 
+          icon: <DashboardIcon />, 
+          path: '/admin/dashboard', 
+          visible: true 
+        },
+        { 
+          text: 'Master Queue', 
+          icon: <AssignmentIcon />, 
+          path: '/admin/requests', 
+          visible: true 
+        },
+        { 
+          text: 'Payments Desk', 
+          icon: <PaymentsIcon />, 
+          path: '/admin/payments', 
+          visible: ['Super Admin', 'Treasurer', 'Captain'].includes(userRole) 
+        },
+        { 
+          text: 'Verify QR Code', 
+          icon: <QrCodeIcon />, 
+          path: '/admin/verify', 
+          visible: true 
+        },
+      ]
     },
-    { 
-      text: 'Master Queue', 
-      icon: <AssignmentIcon />, 
-      path: '/admin/requests', 
-      visible: true 
+    {
+      title: 'Management',
+      items: [
+        { 
+          text: 'Manage Residents', 
+          icon: <PeopleAltIcon />, 
+          path: '/admin/residents', 
+          visible: ['Super Admin', 'Captain', 'Secretary', 'Admin'].includes(userRole) 
+        },
+        { 
+          text: 'Broadcast Center', 
+          icon: <CampaignIcon />, 
+          path: '/admin/announcements', 
+          visible: ['Super Admin', 'Captain', 'Secretary', 'Admin'].includes(userRole) 
+        },
+        { 
+          text: 'Service Catalog', 
+          icon: <FolderSpecialIcon />, 
+          path: '/admin/documents', 
+          visible: ['Super Admin', 'Admin', 'Secretary', 'Captain'].includes(userRole) 
+        },
+        { 
+          text: 'Barangay Staff', 
+          icon: <GroupsIcon />, 
+          path: '/admin/officials', 
+          visible: ['Super Admin', 'Captain'].includes(userRole) 
+        },
+      ]
     },
-    { 
-      text: 'Manage Residents', 
-      icon: <PeopleAltIcon />, 
-      path: '/admin/residents', 
-      visible: ['Super Admin', 'Captain', 'Secretary', 'Admin'].includes(userRole) 
+    {
+      title: 'System & Security',
+      items: [
+        { 
+          text: 'Forensic Logs', 
+          icon: <HistoryIcon />, 
+          path: '/admin/audit', 
+          visible: ['Super Admin', 'Captain'].includes(userRole) 
+        },
+        { 
+          text: 'Database Backups', 
+          icon: <BackupIcon />, 
+          path: '/admin/backups', 
+          visible: ['Super Admin', 'Captain'].includes(userRole) 
+        },
+        { 
+          text: 'System Settings', 
+          icon: <AdminPanelSettingsIcon />, 
+          path: '/admin/settings', 
+          visible: ['Super Admin', 'Captain'].includes(userRole) 
+        },
+      ]
     },
-    { 
-      text: 'Payments Desk', 
-      icon: <PaymentsIcon />, 
-      path: '/admin/payments', 
-      visible: ['Super Admin', 'Treasurer', 'Captain'].includes(userRole) 
-    },
-    { 
-      text: 'Broadcast Center', 
-      icon: <CampaignIcon />, 
-      path: '/admin/announcements', 
-      visible: ['Super Admin', 'Captain', 'Secretary', 'Admin'].includes(userRole) 
-    },
-    { 
-      text: 'Service Catalog', 
-      icon: <FolderSpecialIcon />, 
-      path: '/admin/documents', 
-      visible: ['Super Admin', 'Secretary', 'Captain'].includes(userRole) 
-    },
-    { 
-      text: 'Barangay Staff', 
-      icon: <GroupsIcon />, 
-      path: '/admin/officials', 
-      visible: ['Super Admin', 'Captain'].includes(userRole) 
-    },
-    { 
-      text: 'Forensic Logs', 
-      icon: <HistoryIcon />, 
-      path: '/admin/audit', 
-      visible: ['Super Admin', 'Captain'].includes(userRole) 
-    },
-    { 
-      text: 'My Account', 
-      icon: <AccountCircleIcon />, 
-      path: '/admin/profile', 
-      visible: true 
-    },
-    { 
-      text: 'System Settings', 
-      icon: <AdminPanelSettingsIcon />, 
-      path: '/admin/settings', 
-      visible: ['Super Admin', 'Captain'].includes(userRole) 
-    },
-    { 
-      text: 'Database Backups', 
-      icon: <BackupIcon />, 
-      path: '/admin/backups', 
-      visible: ['Super Admin', 'Captain'].includes(userRole) 
-    },
+    {
+      title: 'Account',
+      items: [
+        { 
+          text: 'My Account', 
+          icon: <AccountCircleIcon />, 
+          path: '/admin/profile', 
+          visible: true 
+        },
+      ]
+    }
   ];
 
   const drawerContent = (
@@ -124,39 +151,62 @@ export default function AdminLayout() {
       
       <Divider sx={{ borderColor: 'rgba(255,255,255,0.05)' }} />
       
-      <List sx={{ flexGrow: 1, pt: 3, px: 2 }}>
-        {menuItems.filter(item => item.visible).map((item) => {
-          const isActive = location.pathname.includes(item.path);
+      <List sx={{ flexGrow: 1, pt: 2, px: 2, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.3) transparent', '&::-webkit-scrollbar': { width: '4px' }, '&::-webkit-scrollbar-track': { background: 'transparent' }, '&::-webkit-scrollbar-thumb': { background: 'rgba(148,163,184,0.3)', borderRadius: '4px', '&:hover': { background: 'rgba(148,163,184,0.5)' } } }}>
+        {menuGroups.map((group) => {
+          const visibleItems = group.items.filter(item => item.visible);
+          if (visibleItems.length === 0) return null;
+          
           return (
-            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-              <ListItemButton 
-                onClick={() => {
-                  navigate(item.path);
-                  if (isMobile) setMobileOpen(false);
-                }}
-                sx={{
-                  borderRadius: 2,
-                  bgcolor: isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                  color: isActive ? 'white' : 'inherit',
-                  '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.03)',
-                    color: 'white',
-                    '& .MuiListItemIcon-root': { color: 'white' }
-                  },
+            <Box key={group.title} sx={{ mb: 2.5 }}>
+              <Typography 
+                variant="caption" 
+                sx={{ 
+                  px: 2, 
+                  color: 'rgba(255,255,255,0.3)', 
+                  fontWeight: 'bold', 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.08em',
+                  display: 'block',
+                  mb: 1
                 }}
               >
-                <ListItemIcon sx={{ color: isActive ? 'primary.main' : 'inherit', minWidth: 40 }}>
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText 
-                  primary={item.text} 
-                  primaryTypographyProps={{ 
-                    fontWeight: isActive ? 'bold' : '500', 
-                    fontSize: '0.85rem' 
-                  }} 
-                />
-              </ListItemButton>
-            </ListItem>
+                {group.title}
+              </Typography>
+              {visibleItems.map((item) => {
+                const isActive = location.pathname.includes(item.path);
+                return (
+                  <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+                    <ListItemButton 
+                      onClick={() => {
+                        navigate(item.path);
+                        if (isMobile) setMobileOpen(false);
+                      }}
+                      sx={{
+                        borderRadius: 2,
+                        bgcolor: isActive ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                        color: isActive ? 'white' : 'inherit',
+                        '&:hover': {
+                          bgcolor: 'rgba(255,255,255,0.03)',
+                          color: 'white',
+                          '& .MuiListItemIcon-root': { color: 'white' }
+                        },
+                      }}
+                    >
+                      <ListItemIcon sx={{ color: isActive ? 'primary.main' : 'inherit', minWidth: 40 }}>
+                        {item.icon}
+                      </ListItemIcon>
+                      <ListItemText 
+                        primary={item.text} 
+                        primaryTypographyProps={{ 
+                          fontWeight: isActive ? 'bold' : '500', 
+                          fontSize: '0.85rem' 
+                        }} 
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                );
+              })}
+            </Box>
           );
         })}
       </List>

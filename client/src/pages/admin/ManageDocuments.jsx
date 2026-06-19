@@ -17,6 +17,7 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import PrintIcon from '@mui/icons-material/Print';
 
 import api from '../../utils/axios';
+import { useSnackbar } from '../../context/SnackbarContext.jsx';
 
 const A4_WIDTH = 595;
 const A4_HEIGHT = 842;
@@ -30,6 +31,7 @@ const DEFAULT_LAYOUT = {
 };
 
 export default function ManageDocuments() {
+  const showSnackbar = useSnackbar();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,6 +54,10 @@ export default function ManageDocuments() {
 
   useEffect(() => { fetchDocuments(); }, []);
 
+  // --- ROLE-BASED ACCESS CONTROL ---
+  const userRole = localStorage.getItem('role') || 'Official';
+  const isViewOnly = userRole === 'Admin';
+
   const fetchDocuments = async () => {
     try {
       const res = await api.get('/admin/document-types');
@@ -72,14 +78,15 @@ export default function ManageDocuments() {
   };
 
   const handleSaveDocument = async () => {
-    if (!formData.type_name) return alert("Document Name is required.");
+    if (!formData.type_name) return showSnackbar("Document Name is required.", "warning");
     setIsSubmitting(true);
     try {
       if (editingId) await api.put(`/admin/document-types/${editingId}`, formData);
       else await api.post('/admin/document-types', formData);
       setEditModalOpen(false);
       fetchDocuments();
-    } catch (err) { alert(err.response?.data?.error || "Failed to save."); }
+      showSnackbar(editingId ? "Document updated successfully." : "Document created successfully.", "success");
+    } catch (err) { showSnackbar(err.response?.data?.error || "Failed to save.", "error"); }
     finally { setIsSubmitting(false); }
   };
 
@@ -101,8 +108,9 @@ export default function ManageDocuments() {
       });
       setUploadMsg({ type: 'success', text: 'Template Uploaded!' });
       fetchDocuments();
+      showSnackbar("Background template uploaded successfully.", "success");
       setTimeout(() => setTemplateModalOpen(false), 1500);
-    } catch (err) { setUploadMsg({ type: 'error', text: 'Upload failed.' }); }
+    } catch (err) { showSnackbar("Template upload failed.", "error"); setUploadMsg({ type: 'error', text: 'Upload failed.' }); }
     finally { setIsSubmitting(false); }
   };
 
@@ -156,7 +164,8 @@ export default function ManageDocuments() {
       await api.put(`/admin/document-types/${selectedDoc.doc_type_id}/layout`, { layout_config: layoutData });
       handleCloseLayout();
       fetchDocuments();
-    } catch (err) { alert("Failed to save."); }
+      showSnackbar("Layout mapping saved successfully.", "success");
+    } catch (err) { showSnackbar("Failed to save.", "error"); }
     finally { setIsSubmitting(false); }
   };
 
@@ -165,7 +174,7 @@ export default function ManageDocuments() {
       const res = await api.post(`/admin/document-types/${selectedDoc.doc_type_id}/test-pdf`, { layout_config: layoutData }, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       window.open(url, '_blank');
-    } catch (err) { alert("Failed to generate test PDF. Ensure the template is uploaded."); }
+    } catch (err) { showSnackbar("Failed to generate test PDF. Ensure the template is uploaded.", "error"); }
   };
 
   const handleTestPrintRow = async (row) => {
@@ -178,7 +187,7 @@ export default function ManageDocuments() {
       const res = await api.post(`/admin/document-types/${row.doc_type_id}/test-pdf`, { layout_config: config }, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       window.open(url, '_blank');
-    } catch (err) { alert("Failed to generate test PDF. Ensure the template is uploaded."); }
+    } catch (err) { showSnackbar("Failed to generate test PDF. Ensure the template is uploaded.", "error"); }
   };
 
   if (loading) return <Box sx={{ mt: 10, textAlign: 'center' }}><CircularProgress /></Box>;
@@ -187,7 +196,9 @@ export default function ManageDocuments() {
     <Box sx={{ p: 3, maxWidth: 1200, mx: 'auto' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 4 }}>
         <Typography variant="h4" fontWeight="bold">Service Catalog</Typography>
-        <Button variant="contained" startIcon={<AddCircleOutlineIcon />} onClick={() => handleOpenEdit()}>Add Document</Button>
+        {!isViewOnly && (
+          <Button variant="contained" startIcon={<AddCircleOutlineIcon />} onClick={() => handleOpenEdit()}>Add Document</Button>
+        )}
       </Box>
 
       <TableContainer component={Paper} elevation={2} sx={{ borderRadius: 3 }}>
@@ -208,10 +219,14 @@ export default function ManageDocuments() {
                 <TableCell>{row.template_file ? <Chip label="Uploaded" color="success" size="small" /> : <Chip label="Missing" color="error" size="small" />}</TableCell>
                 <TableCell align="center">
                   <Stack direction="row" spacing={1} justifyContent="center">
-                    <IconButton color="primary" onClick={() => handleOpenEdit(row)}><EditIcon /></IconButton>
-                    <Button size="small" variant="outlined" onClick={() => handleOpenTemplate(row)}>Background</Button>
+                    {!isViewOnly && (
+                      <>
+                        <IconButton color="primary" onClick={() => handleOpenEdit(row)}><EditIcon /></IconButton>
+                        <Button size="small" variant="outlined" onClick={() => handleOpenTemplate(row)}>Background</Button>
+                        <Button size="small" variant="outlined" color="secondary" onClick={() => handleOpenLayout(row)}>Layout</Button>
+                      </>
+                    )}
                     <Button size="small" variant="outlined" color="primary" onClick={() => handleTestPrintRow(row)}>Test Print</Button>
-                    <Button size="small" variant="outlined" color="secondary" onClick={() => handleOpenLayout(row)}>Layout</Button>
                   </Stack>
                 </TableCell>
               </TableRow>
@@ -367,7 +382,7 @@ export default function ManageDocuments() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditModalOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveDocument} disabled={!formData.type_name || isSubmitting}>
+          <Button variant="contained" onClick={handleSaveDocument} disabled={!formData.type_name || isSubmitting} startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : null} className={isSubmitting ? 'btn-loading' : ''}>
             {isSubmitting ? 'Saving...' : 'Save Document'}
           </Button>
         </DialogActions>

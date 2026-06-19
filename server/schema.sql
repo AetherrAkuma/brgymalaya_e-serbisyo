@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS tbl_Announcements (
     content_body TEXT NOT NULL,
     image_path VARCHAR(255),
     is_pinned BOOLEAN DEFAULT FALSE,
-    status ENUM('Draft', 'Published', 'Archived') DEFAULT 'Draft',
+    status ENUM('Draft', 'Pending Approval', 'Published', 'Archived') DEFAULT 'Draft',
     date_posted DATETIME DEFAULT CURRENT_TIMESTAMP,
     expiry_date DATETIME,
     posted_by INT,

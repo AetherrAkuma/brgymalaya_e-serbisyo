@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Box, Paper, Typography, Button, TextField, Alert, Stack, 
-  Tabs, Tab, Card, CardContent, CircularProgress, Divider, Grid 
+  Tabs, Tab, Card, CardContent, CircularProgress, Divider, Grid, Chip 
 } from '@mui/material';
 import { Html5Qrcode } from 'html5-qrcode';
 import QrCodeScannerIcon from '@mui/icons-material/QrCodeScanner';
@@ -14,9 +14,43 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import api from '../../utils/axios';
 
+// Dynamically load PDF.js from CDN to scan QR codes inside PDF files
+const loadPdfJs = () => {
+  return new Promise((resolve, reject) => {
+    if (window.pdfjsLib) {
+      resolve(window.pdfjsLib);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+      resolve(window.pdfjsLib);
+    };
+    script.onerror = (err) => reject(err);
+    document.head.appendChild(script);
+  });
+};
+
+// Helper to format date and time together
+const formatDateTime = (dateString) => {
+  if (!dateString) return 'N/A';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return 'N/A';
+  return date.toLocaleDateString(undefined, { 
+    month: 'long', 
+    day: 'numeric', 
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+};
+
 export default function VerifyQR() {
   const { hash } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [tabValue, setTabValue] = useState(0);
 
   // States
@@ -29,6 +63,21 @@ export default function VerifyQR() {
   const [cameraActive, setCameraActive] = useState(false);
   const qrRef = useRef(null); // Html5Qrcode instance
   const SCANNER_ELEMENT_ID = "qr-webcam-reader";
+
+  // Dynamic back navigation based on layouts (Public, Resident, Admin)
+  const isResident = location.pathname.startsWith('/resident');
+  const isAdmin = location.pathname.startsWith('/admin');
+
+  let backPath = '/';
+  let backText = 'Back to Homepage';
+
+  if (isResident) {
+    backPath = '/resident/dashboard';
+    backText = 'Back to Dashboard';
+  } else if (isAdmin) {
+    backPath = '/admin/dashboard';
+    backText = 'Back to Command Center';
+  }
 
   useEffect(() => {
     // If a hash parameter is passed in the URL, verify it immediately
@@ -120,13 +169,14 @@ export default function VerifyQR() {
 
   const extractHashFromUrl = (text) => {
     if (text.startsWith('http://') || text.startsWith('https://')) {
-      const parts = text.split('/');
+      const cleanUrl = text.split('?')[0].split('#')[0];
+      const parts = cleanUrl.split('/').filter(Boolean);
       return parts[parts.length - 1]; // Return the last segment
     }
     return text;
   };
 
-  // --- FILE UPLOADER SCANNER ---
+  // --- FILE UPLOADER SCANNER (SUPPORTS IMAGE AND PDF) ---
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -139,13 +189,64 @@ export default function VerifyQR() {
     stopCamera();
 
     try {
-      const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
-      const decodedText = await scanner.scanFile(file, true);
-      const parsedHash = extractHashFromUrl(decodedText);
-      verifyDocumentHash(parsedHash);
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        // Load PDF.js library dynamically
+        const pdfjsLib = await loadPdfJs();
+        
+        // Read file as ArrayBuffer
+        const fileReader = new FileReader();
+        const arrayBuffer = await new Promise((resolve, reject) => {
+          fileReader.onload = () => resolve(fileReader.result);
+          fileReader.onerror = () => reject(fileReader.error);
+          fileReader.readAsArrayBuffer(file);
+        });
+
+        // Load the PDF document
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        if (pdf.numPages === 0) {
+          throw new Error("Empty PDF file uploaded.");
+        }
+
+        // Render page 1 (which holds the QR code stamps)
+        const page = await pdf.getPage(1);
+        const scale = 2.0; // Render at 2x scale for crystal clear QR details
+        const viewport = page.getViewport({ scale });
+        
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+
+        // Convert the rendered canvas page into a PNG Blob for Html5Qrcode scanner
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) {
+          throw new Error("Failed to render PDF page onto canvas blob.");
+        }
+        const imageFile = new File([blob], 'extracted_pdf_page.png', { type: 'image/png' });
+
+        const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
+        const decodedText = await scanner.scanFile(imageFile, true);
+        const parsedHash = extractHashFromUrl(decodedText);
+        verifyDocumentHash(parsedHash);
+      } else {
+        // Standard image scanning
+        const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
+        const decodedText = await scanner.scanFile(file, true);
+        const parsedHash = extractHashFromUrl(decodedText);
+        verifyDocumentHash(parsedHash);
+      }
     } catch (err) {
-      console.error(err);
-      setScanError("Failed to detect a QR code in this image. Try uploading a clearer, higher-resolution picture.");
+      console.error("QR File Parsing Error:", err);
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        setScanError("Failed to detect a QR code in this PDF. Please ensure the PDF is a valid certificate containing a clear QR code.");
+      } else {
+        setScanError("Failed to detect a QR code in this image. Try uploading a clearer, higher-resolution picture.");
+      }
     } finally {
       setLoading(false);
     }
@@ -164,10 +265,10 @@ export default function VerifyQR() {
       <Box sx={{ mb: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Button 
           startIcon={<ArrowBackIcon />} 
-          onClick={() => navigate('/')}
+          onClick={() => navigate(backPath)}
           sx={{ textTransform: 'none', color: 'text.secondary' }}
         >
-          Back to Homepage
+          {backText}
         </Button>
         <Typography variant="h6" fontWeight="bold" color="primary">E-Serbisyo Verification</Typography>
       </Box>
@@ -194,7 +295,7 @@ export default function VerifyQR() {
           sx={{ mb: 4, borderBottom: '1px solid #e2e8f0' }}
         >
           <Tab icon={<PhotoCameraIcon />} label="Camera Scanner" />
-          <Tab icon={<UploadFileIcon />} label="Upload Image" />
+          <Tab icon={<UploadFileIcon />} label="Upload Image / PDF" />
           <Tab icon={<SearchIcon />} label="Manual Search" />
         </Tabs>
 
@@ -207,6 +308,8 @@ export default function VerifyQR() {
           <Stack spacing={3} alignItems="center">
             {cameraActive ? (
               <Box sx={{ width: '100%', maxWidth: 400, position: 'relative', borderRadius: 3, overflow: 'hidden', border: '3px solid #3b82f6' }}>
+                {/* Visual scanner laser line */}
+                <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '3px', bgcolor: '#10b981', boxShadow: '0 0 10px #10b981', animation: 'scanSlide 2s linear infinite', zIndex: 10 }} />
                 {/* Scanner Target Container */}
                 <div id={SCANNER_ELEMENT_ID} style={{ width: '100%', minHeight: '300px', backgroundColor: '#000' }} />
                 <Button 
@@ -245,7 +348,7 @@ export default function VerifyQR() {
         )}
 
         {/* ========================================== */}
-        {/* TAB 1: FILE SCANNER UPLOADER               */}
+        {/* TAB 1: FILE SCANNER UPLOADER (IMAGE / PDF) */}
         {/* ========================================== */}
         {tabValue === 1 && (
           <Box sx={{ textAlign: 'center' }}>
@@ -255,16 +358,16 @@ export default function VerifyQR() {
               startIcon={<UploadFileIcon />}
               sx={{ py: 2, px: 4, borderRadius: 3, fontWeight: 'bold' }}
             >
-              Select Document QR Image
+              Select Image or PDF Document
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 hidden
                 onChange={handleFileUpload}
               />
             </Button>
             <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 2 }}>
-              Upload a clear picture/screenshot of the QR code stamped on the certificate.
+              Upload a clear image or PDF certificate containing the stamped QR code.
             </Typography>
             {/* Hidden reader element needed by library file parser */}
             <div id={SCANNER_ELEMENT_ID} style={{ display: 'none' }} />
@@ -300,8 +403,10 @@ export default function VerifyQR() {
 
         {/* --- LOADING SPINNER --- */}
         {loading && (
-          <Box display="flex" justifyContent="center" sx={{ py: 4 }}>
-            <CircularProgress />
+          <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" sx={{ py: 6, animation: 'pulseGlow 2s infinite' }}>
+            <CircularProgress size={60} thickness={4} sx={{ mb: 3, color: 'primary.main' }} />
+            <Typography variant="body1" fontWeight="bold" color="text.primary">Analyzing Certificate...</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>Parsing security QR codes & verifying signatures</Typography>
           </Box>
         )}
 
@@ -314,7 +419,7 @@ export default function VerifyQR() {
             
             {verifyResult.status === 'Valid' ? (
               // --- VERIFIED AUTHENTIC DOCUMENT ---
-              <Card sx={{ border: '2px solid #10b981', borderRadius: 3, bgcolor: '#f0fdf4', boxShadow: 'none' }}>
+              <Card sx={{ border: '2px solid #10b981', borderRadius: 3, bgcolor: '#f0fdf4', boxShadow: 'none', animation: 'slideInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
                 <CardContent sx={{ p: 3 }}>
                   <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
                     <VerifiedIcon color="success" sx={{ fontSize: 36 }} />
@@ -323,6 +428,12 @@ export default function VerifyQR() {
                       <Typography variant="caption" color="text.secondary">{verifyResult.message}</Typography>
                     </Box>
                   </Stack>
+                  
+                  {verifyResult.details.status !== 'Issued' && (
+                    <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+                      <strong>Pending Release:</strong> This document is authentic but has not been officially released to the resident yet. It is currently in the <strong>{verifyResult.details.status}</strong> stage. Do not accept this copy as an official issued document.
+                    </Alert>
+                  )}
                   
                   <Divider sx={{ mb: 2, borderColor: 'rgba(16, 185, 129, 0.2)' }} />
                   
@@ -340,15 +451,37 @@ export default function VerifyQR() {
                       <Typography variant="body1" fontWeight="bold" color="#0f172a">{verifyResult.details.owner}</Typography>
                     </Grid>
                     <Grid item xs={12} sm={6}>
+                      <Typography variant="caption" color="text.secondary" fontWeight="bold">DOCUMENT STATUS</Typography>
+                      <Box sx={{ mt: 0.5 }}>
+                        <Chip 
+                          label={verifyResult.details.status || 'Issued'} 
+                          size="small" 
+                          sx={{ 
+                            bgcolor: verifyResult.details.status === 'Issued' ? '#ecfdf5' : '#eff6ff', 
+                            color: verifyResult.details.status === 'Issued' ? '#047857' : '#1d4ed8', 
+                            fontWeight: 'bold' 
+                          }} 
+                        />
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="caption" color="text.secondary" fontWeight="bold">DATE REQUESTED</Typography>
+                      <Typography variant="body1" fontWeight="bold" color="#0f172a">
+                        {formatDateTime(verifyResult.details.requested_on)}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
                       <Typography variant="caption" color="text.secondary" fontWeight="bold">DATE ISSUED</Typography>
-                      <Typography variant="body1" fontWeight="bold" color="#0f172a">{new Date(verifyResult.details.issued_on).toLocaleDateString(undefined, { dateStyle: 'long' })}</Typography>
+                      <Typography variant="body1" fontWeight="bold" color="#0f172a">
+                        {formatDateTime(verifyResult.details.issued_on)}
+                      </Typography>
                     </Grid>
                   </Grid>
                 </CardContent>
               </Card>
             ) : (
               // --- WARNING / FORGERY / REVOKED ---
-              <Card sx={{ border: '2px solid #ef4444', borderRadius: 3, bgcolor: '#fef2f2', boxShadow: 'none' }}>
+              <Card sx={{ border: '2px solid #ef4444', borderRadius: 3, bgcolor: '#fef2f2', boxShadow: 'none', animation: 'slideInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)' }}>
                 <CardContent sx={{ p: 3 }}>
                   <Stack direction="row" spacing={2} alignItems="center">
                     <WarningAmberIcon color="error" sx={{ fontSize: 36 }} />
@@ -367,6 +500,25 @@ export default function VerifyQR() {
             )}
           </Box>
         )}
+
+      <style>
+        {`
+          @keyframes scanSlide {
+            0% { top: 0%; }
+            50% { top: 100%; }
+            100% { top: 0%; }
+          }
+          @keyframes pulseGlow {
+            0% { transform: scale(0.98); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { transform: scale(0.98); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+          }
+          @keyframes slideInUp {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+          }
+        `}
+      </style>
 
       </Paper>
     </Box>

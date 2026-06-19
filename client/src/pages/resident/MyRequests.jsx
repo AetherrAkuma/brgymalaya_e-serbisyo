@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, CircularProgress, Alert, Tooltip, IconButton, 
@@ -14,9 +14,12 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import InboxOutlinedIcon from '@mui/icons-material/InboxOutlined';
 
 import api from '../../utils/axios';
+import { useSnackbar } from '../../context/SnackbarContext.jsx';
 
 export default function MyRequests() {
+  const showSnackbar = useSnackbar();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -30,7 +33,6 @@ export default function MyRequests() {
     const fetchMyRequests = async () => {
       try {
         const response = await api.get('/requests/resident/me');
-        // Ensure data is an array
         setRequests(Array.isArray(response.data.data) ? response.data.data : []);
       } catch (err) {
         setError('Failed to load your request history.');
@@ -40,6 +42,11 @@ export default function MyRequests() {
       }
     };
     fetchMyRequests();
+    if (searchParams.get('submitted') === 'true') {
+      setTimeout(() => showSnackbar("Your request has been submitted successfully. You can track its status below.", "success"), 100);
+      navigate('/resident/requests', { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 🛠️ FILTERING LOGIC

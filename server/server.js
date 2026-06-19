@@ -13,7 +13,7 @@ const { generateToken, verifyJWT, roleGuard } = require('./middleware/auth');
 const { sqlSanitizer } = require('./middleware/sanitizer');
 // Phase 1.4 File Handling
 const { encryptAndSaveFile, decryptFileBuffer } = require('./utils/fileCrypto');
-const upload = require('./middleware/upload');
+const { upload, uploadAnnouncement } = require('./middleware/upload');
 // Phase 7 PDF Engine
 const { generateBarangayPDF } = require('./utils/pdfGenerator');
 // Phase 8 Audit Logger
@@ -52,6 +52,21 @@ app.use((err, req, res, next) => {
 
 app.use(generalLimiter);
 app.use(sqlSanitizer);
+
+// Public static route: serve announcement images without auth (they are public content)
+app.use('/uploads/announcements', express.static(path.join(__dirname, 'uploads', 'announcements')));
+
+// Helper: safely delete a local announcement image file
+function deleteAnnouncementImage(imagePath) {
+    if (!imagePath) return;
+    // Only handle local paths managed by us — not external URLs
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) return;
+    try {
+        const filename = path.basename(imagePath);
+        const filePath = path.join(__dirname, 'uploads', 'announcements', filename);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (_) { /* non-critical */ }
+}
 
 // Prefix rate limiters for administrative API groups
 app.use('/api/v1/admin', verifyJWT, adminLimiter);
@@ -222,7 +237,7 @@ app.post('/api/v1/files/upload', fileUploadLimiter, express.raw({ type: ['image/
     }
 });
 
-app.get('/api/v1/files/:filename', verifyJWT, roleGuard(['Captain', 'Secretary', 'Treasurer', 'Captain']), fileUploadLimiter, (req, res) => {
+app.get('/api/v1/files/:filename', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), fileUploadLimiter, (req, res) => {
     try {
         const decryptedBuffer = decryptFileBuffer(req.params.filename);
         let mimeType = 'application/octet-stream';
@@ -351,10 +366,39 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
         );
 
         if (residents.length > 0) {
-            const resident = residents[0]; // The bug was likely right here!
+            const resident = residents[0];
 
             if (resident.account_status !== 'Active') {
-                return res.status(403).json({ status: 'error', message: `Account is ${resident.account_status}. Please wait for verification.` });
+                // For blocked accounts: fetch rejection reason from Audit Logs (no schema column needed)
+                let rejectionReason = null;
+                if (resident.account_status === 'Blocked') {
+                    try {
+                        const [logs] = await db.query(
+                            `SELECT new_value FROM tbl_AuditLogs
+                             WHERE table_affected = 'tbl_Residents' AND record_id = ? AND action_type = 'REJECT_REGISTRATION'
+                             ORDER BY timestamp DESC LIMIT 1`,
+                            [resident.resident_id]
+                        );
+                        if (logs.length > 0) {
+                            const parsed = typeof logs[0].new_value === 'string' ? JSON.parse(logs[0].new_value) : logs[0].new_value;
+                            rejectionReason = parsed?.rejection_reason || null;
+                        }
+                    } catch (_) { /* non-critical, proceed without reason */ }
+
+                    return res.status(403).json({
+                        status: 'error',
+                        account_status: 'Blocked',
+                        message: 'Your registration has been rejected by the Barangay.',
+                        rejection_reason: rejectionReason
+                    });
+                }
+
+                // Pending account
+                return res.status(403).json({
+                    status: 'error',
+                    account_status: 'Pending',
+                    message: 'Your account is still pending verification. You will be notified via email once approved.'
+                });
             }
 
             // Generate Token
@@ -459,6 +503,11 @@ app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) =
             return res.status(400).json({ error: 'Email, reset token, and new password are required.' });
         }
 
+        // Backend password strength validation
+        if (new_password.length < 8) {
+            return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+        }
+
         // 1. Hash incoming token to match database
         const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
@@ -469,15 +518,31 @@ app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) =
         );
 
         if (resets.length === 0) {
+            // Increment attempt_count on all valid tokens for this email on mismatch
+            await db.query(
+                'UPDATE tbl_PasswordReset SET attempt_count = attempt_count + 1 WHERE email = ? AND is_used = FALSE AND expires_at > NOW()',
+                [email]
+            );
+            // Auto-invalidate tokens that have exceeded the attempt threshold
+            await db.query(
+                'UPDATE tbl_PasswordReset SET is_used = TRUE WHERE email = ? AND attempt_count >= 5 AND is_used = FALSE',
+                [email]
+            );
             return res.status(400).json({ error: 'Invalid or expired password reset link.' });
         }
 
         const resetRecord = resets[0];
 
-        // 3. Hash the new password
+        // 3. Check if this token has been brute-forced
+        if (resetRecord.attempt_count >= 5) {
+            await db.query('UPDATE tbl_PasswordReset SET is_used = TRUE WHERE reset_id = ?', [resetRecord.reset_id]);
+            return res.status(400).json({ error: 'This reset link has been invalidated due to too many failed attempts. Please request a new one.' });
+        }
+
+        // 4. Hash the new password
         const hashedPassword = hashPassword(new_password);
 
-        // 4. Update the user password in appropriate table
+        // 5. Update the user password in appropriate table
         const [residents] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email]);
         if (residents.length > 0) {
             await db.query('UPDATE tbl_Residents SET password_hash = ? WHERE email_address = ?', [hashedPassword, email]);
@@ -490,7 +555,7 @@ app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) =
             }
         }
 
-        // 5. Mark the token as used
+        // 6. Mark the token as used
         await db.query('UPDATE tbl_PasswordReset SET is_used = TRUE WHERE reset_id = ?', [resetRecord.reset_id]);
 
         res.status(200).json({ status: 'success', message: 'Password has been reset successfully. You can now log in.' });
@@ -593,7 +658,8 @@ app.post('/api/v1/setup/seed-public', registerLimiter, async (req, res) => {
             INSERT IGNORE INTO tbl_SystemSettings (setting_key, setting_value, description, is_encrypted) 
             VALUES 
             ('barangay_name', 'Barangay 143', 'The official name of the barangay', FALSE),
-            ('contact_email', 'admin@brgy143.gov.ph', 'Public contact email', FALSE)
+            ('contact_email', 'admin@brgy143.gov.ph', 'Public contact email', FALSE),
+            ('auto_delete_id_proof_hours', '12', 'Hours after which uploaded ID proofs are automatically deleted from the server (0 = disabled)', FALSE)
         `);
 
         res.status(201).json({ status: 'success', message: 'Public portal dummy data seeded successfully!' });
@@ -656,7 +722,7 @@ app.post('/api/v1/admin/document-types', verifyJWT, roleGuard(['Captain', 'Secre
 });
 
 // Endpoint 18.5: Get All Document Types (Admin View - Includes Unavailable)
-app.get('/api/v1/admin/document-types', verifyJWT, roleGuard(['Captain', 'Secretary', 'Captain']), async (req, res) => {
+app.get('/api/v1/admin/document-types', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), async (req, res) => {
     try {
         const query = `SELECT * FROM tbl_DocumentTypes ORDER BY type_name ASC`;
         const [documents] = await db.query(query);
@@ -732,11 +798,28 @@ app.get('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin',
 });
 
 // Endpoint 39: Create Announcement
-// Endpoint 39: Create Announcement (Supports native image_path)
+// Endpoint 38.5: Upload Announcement Image (returns local image path)
+app.post('/api/v1/admin/announcements/upload-image', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), fileUploadLimiter, uploadAnnouncement.single('announcement_image'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ status: 'error', message: 'No image file provided.' });
+        const imageUrl = `/uploads/announcements/${req.file.filename}`;
+        res.status(200).json({ status: 'success', image_path: imageUrl });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 39: Create Announcement
 app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary']), async (req, res) => {
     try {
         const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path } = req.body;
         const posted_by = req.user.id;
+        const userRole = req.user.role;
+
+        let finalStatus = status || 'Draft';
+        if (userRole === 'Admin' && finalStatus === 'Published') {
+            finalStatus = 'Pending Approval';
+        }
 
         const insertQuery = `
             INSERT INTO tbl_announcements (title, content_body, target_audience, is_pinned, status, expiry_date, image_path, posted_by)
@@ -745,11 +828,14 @@ app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin'
 
         await db.query(insertQuery, [
             title, content_body, target_audience || 'All',
-            is_pinned ? 1 : 0, status || 'Draft',
+            is_pinned ? 1 : 0, finalStatus,
             expiry_date || null, image_path || null, posted_by
         ]);
 
-        res.status(201).json({ status: 'success', message: 'Announcement created successfully.' });
+        const msg = finalStatus === 'Pending Approval'
+            ? 'Announcement submitted for approval. It will be published once reviewed.'
+            : 'Announcement created successfully.';
+        res.status(201).json({ status: 'success', message: msg });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
@@ -759,9 +845,31 @@ app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin'
 app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary']), async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path } = req.body;
+        const { title, content_body, target_audience, is_pinned, status, expiry_date, image_path, rejection_reason } = req.body;
+        const userRole = req.user.role;
+        const userId = req.user.id;
+
+        const [existing] = await db.query('SELECT * FROM tbl_announcements WHERE announcement_id = ?', [id]);
+        if (existing.length === 0) return res.status(404).json({ error: 'Announcement not found.' });
+        const announcement = existing[0];
+
+        if (userRole === 'Admin' && announcement.posted_by !== userId) {
+            return res.status(403).json({ error: 'You can only edit your own announcements.' });
+        }
 
         if (title && content_body) {
+            let finalStatus = status || announcement.status;
+            if (userRole === 'Admin') {
+                if (finalStatus === 'Published') finalStatus = 'Pending Approval';
+            }
+
+            // If the image is being replaced or removed, delete the old file from disk
+            const oldImagePath = announcement.image_path;
+            const newImagePath = image_path !== undefined ? (image_path || null) : oldImagePath;
+            if (oldImagePath && oldImagePath !== newImagePath) {
+                deleteAnnouncementImage(oldImagePath);
+            }
+
             const updateQuery = `
                 UPDATE tbl_announcements 
                 SET title = ?, content_body = ?, target_audience = ?, is_pinned = ?, status = ?, expiry_date = ?, image_path = ?
@@ -769,13 +877,49 @@ app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Adm
             `;
             await db.query(updateQuery, [
                 title, content_body, target_audience,
-                is_pinned ? 1 : 0, status,
-                expiry_date || null, image_path || null, id
+                is_pinned ? 1 : 0, finalStatus,
+                expiry_date || null, newImagePath, id
             ]);
+
+            if (userRole !== 'Admin' && status === 'Published' && announcement.status === 'Pending Approval') {
+                await logAction({
+                    user_id: userId, user_type: 'Official', table_affected: 'tbl_Announcements',
+                    record_id: id, action_type: 'APPROVE_ANNOUNCEMENT',
+                    old_value: { status: announcement.status }, new_value: { status: 'Published' }
+                });
+            }
+
+            if (userRole !== 'Admin' && status === 'Draft' && announcement.status === 'Pending Approval' && rejection_reason) {
+                // rejection_reason is NOT stored in tbl_Announcements column (not in PDF schema).
+                // It is stored exclusively in tbl_AuditLogs.new_value JSON below.
+
+                const [creator] = await db.query(
+                    'SELECT o.full_name, o.email_official FROM tbl_BarangayOfficials o WHERE o.user_id = ?',
+                    [announcement.posted_by]
+                );
+                if (creator.length > 0) {
+                    await sendEmail(
+                        creator[0].email_official,
+                        'Announcement Rejected - E-Serbisyo',
+                        `Hi ${creator[0].full_name},<br/><br/>Your announcement "<b>${announcement.title}</b>" was not approved.<br/><br/><b>Reason:</b> ${rejection_reason}<br/><br/>You can edit and resubmit it from the Broadcast Center.`
+                    );
+                }
+
+                // Store rejection reason in Audit Log (new_value JSON) — zero schema changes
+                await logAction({
+                    user_id: userId, user_type: 'Official', table_affected: 'tbl_Announcements',
+                    record_id: id, action_type: 'REJECT_ANNOUNCEMENT',
+                    old_value: { status: announcement.status },
+                    new_value: { status: 'Draft', rejection_reason }
+                });
+            }
         } else {
-            // Quick toggle for pin/status from the table
+            let finalStatus = status || announcement.status;
+            if (userRole === 'Admin' && finalStatus === 'Published') {
+                return res.status(403).json({ error: 'Admins cannot publish announcements directly.' });
+            }
             const updateQuery = `UPDATE tbl_announcements SET is_pinned = ?, status = ? WHERE announcement_id = ?`;
-            await db.query(updateQuery, [is_pinned ? 1 : 0, status, id]);
+            await db.query(updateQuery, [is_pinned ? 1 : 0, finalStatus, id]);
         }
 
         res.status(200).json({ status: 'success', message: 'Announcement updated successfully.' });
@@ -785,10 +929,31 @@ app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Adm
     }
 });
 
+// Endpoint 40.5: Get Announcement Rejection Reason from Audit Logs (No schema column needed)
+app.get('/api/v1/admin/announcements/:id/rejection-reason', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [logs] = await db.query(
+            `SELECT new_value FROM tbl_AuditLogs
+             WHERE table_affected = 'tbl_Announcements' AND record_id = ? AND action_type = 'REJECT_ANNOUNCEMENT'
+             ORDER BY timestamp DESC LIMIT 1`,
+            [id]
+        );
+        if (logs.length === 0) return res.status(200).json({ status: 'success', rejection_reason: null });
+        const parsed = typeof logs[0].new_value === 'string' ? JSON.parse(logs[0].new_value) : logs[0].new_value;
+        res.status(200).json({ status: 'success', rejection_reason: parsed?.rejection_reason || null });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
 // Endpoint 41: Delete Announcement
 app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Admin']), async (req, res) => {
     try {
         const { id } = req.params;
+        // Fetch image_path before deleting so we can clean up the file
+        const [rows] = await db.query('SELECT image_path FROM tbl_announcements WHERE announcement_id = ?', [id]);
+        if (rows.length > 0) deleteAnnouncementImage(rows[0].image_path);
         await db.query('DELETE FROM tbl_announcements WHERE announcement_id = ?', [id]);
         res.status(200).json({ status: 'success', message: 'Announcement deleted.' });
     } catch (error) {
@@ -796,63 +961,9 @@ app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', '
     }
 });
 
-// Endpoint 37: Get All Residents for Admin Verification
-app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Captain', 'Secretary', 'Captain']), async (req, res) => {
-    try {
-        const { account_status } = req.body;
-        const { id } = req.params;
-        const userRole = req.user.role; // Extracted from your JWT token
-
-        if (!['Pending', 'Active', 'Blocked'].includes(account_status)) {
-            return res.status(400).json({ error: "Invalid status. Must be 'Pending', 'Active', or 'Blocked'." });
-        }
-
-        // 🛡️ STRICT SECURITY RULE: Only Captain and Captain can block accounts
-        if (account_status === 'Blocked' && !['Captain', 'Captain'].includes(userRole)) {
-            return res.status(403).json({
-                error: "Unauthorized action. Only the Barangay Captain or Captain can block a resident's account."
-            });
-        }
-
-        const [resident] = await db.query(
-            'SELECT first_name, email_address FROM tbl_Residents WHERE resident_id = ?',
-            [id]
-        );
-        if (resident.length === 0) return res.status(404).json({ error: 'Resident not found.' });
-        const { first_name, email_address } = resident[0];
-
-        const [result] = await db.query(
-            'UPDATE tbl_Residents SET account_status = ? WHERE resident_id = ?',
-            [account_status, id]
-        );
-
-        if (result.affectedRows === 0) return res.status(404).json({ error: 'Resident not found.' });
-
-        // Send Email Notification
-        let statusDescription = 'is currently pending verification';
-        if (account_status === 'Active') {
-            statusDescription = 'has been approved and is now active! You can now log in to request certificates.';
-        } else if (account_status === 'Blocked') {
-            statusDescription = 'has been blocked. If you believe this is an error, please contact the Barangay Hall.';
-        }
-
-        await sendEmail(
-            email_address,
-            `Account Registration Update - ${account_status}`,
-            `Hi ${first_name},<br/><br/>Your resident account status for E-Serbisyo Barangay Malaya ${statusDescription}`
-        );
-
-        res.status(200).json({
-            status: 'success',
-            message: `Resident account successfully marked as ${account_status}.`
-        });
-    } catch (error) {
-        res.status(500).json({ status: 'error', message: error.message });
-    }
-});
 
 // Endpoint 37: Get All Residents for Admin Verification (All Officials Can View)
-app.get('/api/v1/admin/residents', verifyJWT, roleGuard(['Captain', 'Admin', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.get('/api/v1/admin/residents', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         const query = `
             SELECT resident_id, first_name, middle_name, last_name, email_address, 
@@ -870,7 +981,7 @@ app.get('/api/v1/admin/residents', verifyJWT, roleGuard(['Captain', 'Admin', 'Se
 });
 
 // Upgraded Endpoint 20.5: Manage Resident Account Status
-app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Captain', 'Captain', 'Admin', 'Secretary']), async (req, res) => {
+app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), async (req, res) => {
     try {
         const { account_status } = req.body;
         const { id } = req.params;
@@ -887,6 +998,69 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Captain', '
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Resident not found.' });
 
         res.status(200).json({ status: 'success', message: `Resident account successfully marked as ${account_status}.` });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 20.6: Reject Resident Registration (Admin/Captain/Secretary)
+// NOTE: rejection_reason is NOT stored in tbl_Residents column (not in PDF schema).
+// It is stored in tbl_AuditLogs.new_value JSON (action_type: 'REJECT_REGISTRATION').
+app.put('/api/v1/admin/residents/:id/reject', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { rejection_reason } = req.body;
+        const userId = req.user.id;
+
+        if (!rejection_reason || !rejection_reason.trim()) {
+            return res.status(400).json({ error: 'Rejection reason is required.' });
+        }
+
+        const [resident] = await db.query(
+            'SELECT first_name, email_address FROM tbl_Residents WHERE resident_id = ? AND account_status = ?',
+            [id, 'Pending']
+        );
+        if (resident.length === 0) return res.status(404).json({ error: 'Pending resident not found.' });
+
+        // Only update account_status — rejection_reason lives in tbl_AuditLogs
+        await db.query(
+            'UPDATE tbl_Residents SET account_status = ? WHERE resident_id = ?',
+            ['Blocked', id]
+        );
+
+        await sendEmail(
+            resident[0].email_address,
+            'Registration Rejected - E-Serbisyo Barangay Malaya',
+            `Hi ${resident[0].first_name},<br/><br/>Your registration was not approved.<br/><br/><b>Reason:</b> ${rejection_reason}<br/><br/>If you have questions, please visit the Barangay Hall for assistance.`
+        );
+
+        // Store rejection reason in the Audit Log (new_value JSON) — zero schema changes
+        await logAction({
+            user_id: userId, user_type: 'Official', table_affected: 'tbl_Residents',
+            record_id: id, action_type: 'REJECT_REGISTRATION',
+            old_value: { account_status: 'Pending' },
+            new_value: { account_status: 'Blocked', rejection_reason }
+        });
+
+        res.status(200).json({ status: 'success', message: 'Registration rejected. Resident has been notified.' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 20.7: Get Resident Rejection Reason from Audit Logs (No schema column needed)
+app.get('/api/v1/admin/residents/:id/rejection-reason', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [logs] = await db.query(
+            `SELECT new_value FROM tbl_AuditLogs
+             WHERE table_affected = 'tbl_Residents' AND record_id = ? AND action_type = 'REJECT_REGISTRATION'
+             ORDER BY timestamp DESC LIMIT 1`,
+            [id]
+        );
+        if (logs.length === 0) return res.status(200).json({ status: 'success', rejection_reason: null });
+        const parsed = typeof logs[0].new_value === 'string' ? JSON.parse(logs[0].new_value) : logs[0].new_value;
+        res.status(200).json({ status: 'success', rejection_reason: parsed?.rejection_reason || null });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
     }
@@ -1036,7 +1210,7 @@ app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Captain'
 
 // Endpoint 24: Initial Verification (Secretary / Captain)
 // Upgraded Endpoint 24: Initial Verification (With Audit Logging)
-app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'Secretary', 'Captain', 'Captain', 'Treasurer']), adminLimiter, async (req, res) => {
+app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), adminLimiter, async (req, res) => {
     try {
         const { action, rejection_reason } = req.body; // action: 'Approve' or 'Reject'
         const { request_id } = req.params;
@@ -1104,7 +1278,7 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'S
 });
 
 // Endpoint 24.3: Get Admin Dashboard Statistics (Upgraded with Chart Data)
-app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
+app.get('/api/v1/admin/dashboard-stats', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         // 1. Get Request Status Counts from tbl_Requests
         const [reqStats] = await db.query(`
@@ -1124,6 +1298,27 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
             WHERE payment_status = 'Paid'
         `);
 
+        // 2a. Today's collections
+        const [todayCollections] = await db.query(`
+            SELECT SUM(amount_paid) as today_collections 
+            FROM tbl_Payments 
+            WHERE payment_status = 'Paid' AND DATE(payment_date) = CURDATE()
+        `);
+
+        // 2b. This week's collections
+        const [weekCollections] = await db.query(`
+            SELECT SUM(amount_paid) as week_collections 
+            FROM tbl_Payments 
+            WHERE payment_status = 'Paid' AND payment_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+        `);
+
+        // 2c. This month's collections
+        const [monthCollections] = await db.query(`
+            SELECT SUM(amount_paid) as month_collections 
+            FROM tbl_Payments 
+            WHERE payment_status = 'Paid' AND payment_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        `);
+
         // 3. NEW: Document Demand (For the Doughnut Chart)
         const [docDemand] = await db.query(`
             SELECT dt.type_name as name, COUNT(r.request_id) as value 
@@ -1141,6 +1336,30 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
             ORDER BY MIN(date_requested) ASC
         `);
 
+        // 5. Recent payment history for Treasurer Ledger
+        const [recentPayments] = await db.query(`
+            SELECT 
+                p.payment_id,
+                p.amount_paid,
+                p.or_number,
+                p.payment_date,
+                p.payor_name,
+                dt.type_name,
+                r.reference_no
+            FROM tbl_Payments p
+            JOIN tbl_Requests r ON p.request_id = r.request_id
+            JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
+            ORDER BY p.payment_date DESC
+            LIMIT 5
+        `);
+
+        // 6. Get Pending Residents Count
+        const [resStats] = await db.query(`
+            SELECT COUNT(*) as pending_residents 
+            FROM tbl_Residents 
+            WHERE account_status = 'Pending'
+        `);
+
         res.status(200).json({ 
             status: 'success', 
             data: {
@@ -1150,8 +1369,13 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
                 ready: Number(reqStats[0].ready_count || 0),
                 totalRequests: Number(reqStats[0].total_requests || 0),
                 totalCollections: Number(finStats[0].total_collections || 0),
+                todayCollections: Number(todayCollections[0].today_collections || 0),
+                weekCollections: Number(weekCollections[0].week_collections || 0),
+                monthCollections: Number(monthCollections[0].month_collections || 0),
                 documentDemand: docDemand,
-                trendData: trend
+                trendData: trend,
+                recentPayments: recentPayments,
+                pendingResidents: Number(resStats[0].pending_residents || 0)
             }
         });
     } catch (error) {
@@ -1160,7 +1384,7 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, async (req, res) => {
 });
 
 // Endpoint 29: Process Payment (Treasurer/Admin Only)
-app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Treasurer', 'Captain', 'Captain']), async (req, res) => {
+app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Captain', 'Treasurer']), async (req, res) => {
     try {
         const { request_id } = req.params;
         const { or_number, amount_paid } = req.body;
@@ -1253,7 +1477,7 @@ app.get('/api/v1/residents/me/profile', verifyJWT, roleGuard(['Resident']), asyn
 });
 
 // Endpoint 42: Get Current Official's Profile
-app.get('/api/v1/admin/profile', verifyJWT, async (req, res) => {
+app.get('/api/v1/admin/profile', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         const [user] = await db.query(
             'SELECT official_id, full_name, email_official, username, role, account_status FROM tbl_barangayofficials WHERE user_id = ?',
@@ -1267,7 +1491,7 @@ app.get('/api/v1/admin/profile', verifyJWT, async (req, res) => {
 });
 
 // Endpoint 42b: Live Security Check (Database Triggered)
-app.get('/api/v1/admin/profile/security-check', verifyJWT, async (req, res) => {
+app.get('/api/v1/admin/profile/security-check', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         const [user] = await db.query(
             'SELECT require_password_change, role FROM tbl_barangayofficials WHERE user_id = ?',
@@ -1286,7 +1510,7 @@ app.get('/api/v1/admin/profile/security-check', verifyJWT, async (req, res) => {
 });
 
 // Endpoint 43: Update Profile Password
-app.put('/api/v1/admin/profile/password', verifyJWT, async (req, res) => {
+app.put('/api/v1/admin/profile/password', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         const { current_password, new_password } = req.body;
         const userId = req.user.id;
@@ -1340,7 +1564,7 @@ app.get('/api/v1/payments/queue', verifyJWT, roleGuard(['Treasurer', 'Captain'])
 });
 
 // Endpoint 25.5: Get All Requests for Admin Queue
-app.get('/api/v1/admin/requests', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.get('/api/v1/admin/requests', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         const query = `
             SELECT 
@@ -1370,7 +1594,7 @@ app.get('/api/v1/admin/requests', verifyJWT, roleGuard(['Admin', 'Captain', 'Sec
 });
 
 // Endpoint 26.3: Decrypt and Stream Files for Admin Viewing (FIXED)
-app.get('/api/v1/admin/view-file/:filename', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Captain', 'Treasurer']), async (req, res) => {
+app.get('/api/v1/admin/view-file/:filename', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Treasurer']), async (req, res) => {
     try {
         const { filename } = req.params;
 
@@ -1393,7 +1617,7 @@ app.get('/api/v1/admin/view-file/:filename', verifyJWT, roleGuard(['Admin', 'Cap
 });
 
 // Endpoint 26.4: List Supporting Files for a Specific Reference No
-app.get('/api/v1/admin/request-files/:refNo', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary', 'Captain']), async (req, res) => {
+app.get('/api/v1/admin/request-files/:refNo', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), async (req, res) => {
     try {
         const { refNo } = req.params;
         const uploadDir = path.join(__dirname, 'uploads');
@@ -1580,7 +1804,7 @@ app.put('/api/v1/admin/requests/:id/status', verifyJWT, roleGuard(['Admin', 'Cap
 });
 
 // Endpoint 28: Mark Request as Ready for Pickup (Secretary / Captain)
-app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary', 'Captain']), adminLimiter, async (req, res) => {
+app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), adminLimiter, async (req, res) => {
     try {
         const { request_id } = req.params;
 
@@ -1620,7 +1844,7 @@ app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary',
 });
 
 // Endpoint 29: Issue Document (Secretary / Captain)
-app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary', 'Captain']), adminLimiter, async (req, res) => {
+app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), adminLimiter, async (req, res) => {
     try {
         const { request_id } = req.params;
 
@@ -1664,7 +1888,7 @@ app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary',
 // ==========================================
 
 // Endpoint 30: Signature Vault - Upload Signature (Captain / Captain)
-app.post('/api/v1/admin/signatures/upload', verifyJWT, roleGuard(['Captain', 'Captain']), express.raw({ type: 'image/png', limit: '2mb' }), async (req, res) => {
+app.post('/api/v1/admin/signatures/upload', verifyJWT, roleGuard(['Captain']), express.raw({ type: 'image/png', limit: '2mb' }), async (req, res) => {
     try {
         if (!Buffer.isBuffer(req.body)) return res.status(400).json({ error: 'No PNG signature provided in binary body.' });
 
@@ -1683,7 +1907,7 @@ app.post('/api/v1/admin/signatures/upload', verifyJWT, roleGuard(['Captain', 'Ca
 });
 
 // Endpoint 30.2: Get My Active Signature (Captain / Captain Only)
-app.get('/api/v1/admin/signatures/me', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+app.get('/api/v1/admin/signatures/me', verifyJWT, roleGuard(['Captain']), async (req, res) => {
     try {
         const [sig] = await db.query(
             "SELECT signature_blob FROM tbl_DigitalSignatures WHERE official_id = ? AND status = 'Active' LIMIT 1",
@@ -1696,7 +1920,7 @@ app.get('/api/v1/admin/signatures/me', verifyJWT, roleGuard(['Captain', 'Captain
 });
 
 // Endpoint 34.5: Get All Barangay Officials (Captain Only)
-app.get('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+app.get('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain']), async (req, res) => {
     try {
         const query = `
             SELECT user_id, official_id, full_name, email_official, username, role, account_status, last_login 
@@ -1872,7 +2096,7 @@ app.get('/api/v1/public/verify/:qr_hash', async (req, res) => {
     try {
         const { qr_hash } = req.params;
         const query = `
-            SELECT r.reference_no, r.request_status, dt.type_name, res.first_name, res.last_name, r.pickup_date
+            SELECT r.reference_no, r.request_status, r.date_requested, dt.type_name, res.first_name, res.last_name, r.pickup_date
             FROM tbl_Requests r
             JOIN tbl_Residents res ON r.resident_id = res.resident_id
             JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
@@ -1885,16 +2109,26 @@ app.get('/api/v1/public/verify/:qr_hash', async (req, res) => {
         }
 
         const doc = rows[0];
-        const isValid = (doc.request_status === 'Issued');
+        const allowedStatuses = ['Issued', 'Ready for Pickup', 'Processing'];
+        const isValid = allowedStatuses.includes(doc.request_status);
+
+        let message = 'This is an authentic Barangay Document.';
+        if (doc.request_status === 'Processing') {
+            message = 'This document has been generated and is currently in processing.';
+        } else if (doc.request_status === 'Ready for Pickup') {
+            message = 'This document is authentic and is ready for pickup at the Barangay Hall.';
+        }
 
         res.status(200).json({
             status: isValid ? 'Valid' : 'Revoked/Invalid',
-            message: isValid ? 'This is an authentic Barangay Document.' : 'This document is no longer valid or has not been officially issued.',
+            message: isValid ? message : 'This document is no longer valid or has not been officially issued.',
             details: {
                 reference: doc.reference_no,
                 document: doc.type_name,
                 owner: `${doc.first_name} ${doc.last_name}`,
-                issued_on: doc.pickup_date
+                issued_on: doc.pickup_date,
+                requested_on: doc.date_requested,
+                status: doc.request_status
             }
         });
     } catch (error) { res.status(500).json({ error: error.message }); }
@@ -1905,7 +2139,7 @@ app.get('/api/v1/public/verify/:qr_hash', async (req, res) => {
 // ==========================================
 
 // Endpoint 33: Create Official Account (Captain Only)
-app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain']), async (req, res) => {
     try {
         const { official_id, full_name, email_official, username, password, role } = req.body;
 
@@ -1965,7 +2199,7 @@ app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain'])
 });
 
 // Endpoint 34: Update Official Account Status (Captain Only)
-app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Captain']), async (req, res) => {
     try {
         const { id } = req.params;
         const { account_status } = req.body;
@@ -2019,7 +2253,7 @@ app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Captain', '
 
 // Endpoint 35: View Audit Logs (Captain Only) - Forensic Dashboard
 // Endpoint 35: View Audit Logs (Captain Only) - Forensic Dashboard
-app.get('/api/v1/admin/audit-logs', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+app.get('/api/v1/admin/audit-logs', verifyJWT, roleGuard(['Captain']), async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 100;
         const offset = parseInt(req.query.offset) || 0;
@@ -2059,7 +2293,7 @@ app.get('/api/v1/admin/audit-logs', verifyJWT, roleGuard(['Captain', 'Captain'])
 });
 
 // Endpoint 34.6: Delete Official Account (Captain and Captain)
-app.delete('/api/v1/admin/officials/:id', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+app.delete('/api/v1/admin/officials/:id', verifyJWT, roleGuard(['Captain']), async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -2093,24 +2327,8 @@ app.delete('/api/v1/admin/officials/:id', verifyJWT, roleGuard(['Captain', 'Capt
     }
 });
 
-// Endpoint 33.5: Get All Staff (Captain and Captain)
-app.get('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
-    try {
-        const query = `
-            SELECT user_id, official_id, full_name, email_official, username, role, account_status, last_login 
-            FROM tbl_BarangayOfficials 
-            WHERE role != 'Captain'
-            ORDER BY full_name ASC
-        `;
-        const [officials] = await db.query(query);
-        res.status(200).json({ status: 'success', data: officials });
-    } catch (error) {
-        res.status(500).json({ status: 'error', message: error.message });
-    }
-});
-
 // Endpoint 36: View System Settings (Captain Only)
-app.get('/api/v1/admin/settings', verifyJWT, roleGuard(['Captain', 'Captain']), async (req, res) => {
+app.get('/api/v1/admin/settings', verifyJWT, roleGuard(['Captain']), async (req, res) => {
     try {
         const query = `
             SELECT setting_id, setting_key, setting_value, description, category, data_type, is_encrypted, last_updated
@@ -2259,6 +2477,57 @@ if (shouldRunCron) {
 } else {
     console.log('[CRON] Scheduled daily backup is disabled on this instance (running in clustered mode).');
 }
+
+// Auto-Delete Cron: cleanup expired ID proof images (runs every hour)
+if (shouldRunCron) {
+    cron.schedule('0 * * * *', async () => {
+        try {
+            const [rows] = await db.query("SELECT setting_value FROM tbl_SystemSettings WHERE setting_key = 'auto_delete_id_proof_hours'");
+            const hours = parseInt(rows[0]?.setting_value || '12', 10);
+            if (hours <= 0) return;
+
+            const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+            const [residents] = await db.query(
+                "SELECT resident_id, id_proof_image FROM tbl_Residents WHERE id_proof_image IS NOT NULL AND account_status = 'Pending'"
+            );
+
+            for (const resident of residents) {
+                const filePath = path.join(__dirname, 'uploads', resident.id_proof_image);
+                try {
+                    const stat = fs.statSync(filePath);
+                    if (stat.mtime < cutoff) {
+                        fs.unlinkSync(filePath);
+                        await db.query("UPDATE tbl_Residents SET id_proof_image = NULL WHERE resident_id = ?", [resident.resident_id]);
+                        await logAction({
+                            user_id: 0, user_type: 'System', table_affected: 'tbl_Residents',
+                            record_id: resident.resident_id, action_type: 'AUTO_DELETE_ID_PROOF',
+                            old_value: { id_proof_image: resident.id_proof_image }, new_value: { id_proof_image: null }
+                        });
+                        console.log(`[AUTO-DELETE] Deleted ID proof for resident ${resident.resident_id}`);
+                    }
+                } catch (err) {
+                    if (err.code === 'ENOENT') {
+                        await db.query("UPDATE tbl_Residents SET id_proof_image = NULL WHERE resident_id = ?", [resident.resident_id]);
+                    } else {
+                        console.error(`[AUTO-DELETE] Error resident ${resident.resident_id}:`, err.message);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('[AUTO-DELETE CRON] Error:', err.message);
+        }
+    });
+}
+
+// Startup migrations: ensure schema is up-to-date
+// NOTE: rejection_reason columns are NOT in the PDF schema for tbl_Residents or tbl_Announcements.
+// Rejection reasons are stored in tbl_AuditLogs.new_value JSON instead (zero schema changes).
+(async () => {
+    try {
+        await db.query(`ALTER TABLE tbl_Announcements MODIFY COLUMN status ENUM('Draft','Pending Approval','Published','Archived') DEFAULT 'Draft'`);
+        console.log('[MIGRATION] Announcements status ENUM updated.');
+    } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') console.error('[MIGRATION]', e.message); }
+})();
 
 // Start the server
 app.listen(PORT, '0.0.0.0', () => {

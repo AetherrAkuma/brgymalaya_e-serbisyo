@@ -5,6 +5,7 @@ import PublicLayout from './layouts/PublicLayout';
 import ResidentLayout from './layouts/ResidentLayout';
 import AdminLayout from './layouts/AdminLayout';
 import Login from './pages/public/Login';
+import Register from './pages/public/Register';
 import Home from './pages/public/Home';
 import ForgotPassword from './pages/public/ForgotPassword';
 import ResetPassword from './pages/public/ResetPassword';
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="/" element={<PublicLayout />}>
           <Route index element={<Home />} />
           <Route path="login" element={<Login />} />
+          <Route path="register" element={<Register />} />
           <Route path="verify/:hash?" element={<VerifyQR />} />
           <Route path="forgot-password" element={<ForgotPassword />} />
           <Route path="reset-password" element={<ResetPassword />} />
@@ -53,6 +55,7 @@ export default function App() {
           <Route path="dashboard" element={<ResidentDashboard />} />
           <Route path="wizard" element={<RequestWizard />} />
           <Route path="requests" element={<MyRequests />} />
+          <Route path="verify/:hash?" element={<VerifyQR />} />
           <Route path="profile" element={<Profile />} />
         </Route>
 
@@ -73,6 +76,7 @@ export default function App() {
         <Route path="audit" element={<AuditLogs />} />
         <Route path="settings" element={<SystemSettings />} />
         <Route path="backups" element={<BackupManagement />} />
+        <Route path="verify/:hash?" element={<VerifyQR />} />
       </Route>
 
         {/* Catch-All 404 Route */}
