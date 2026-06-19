@@ -239,12 +239,15 @@ export default function AdminLayout() {
           width: { md: `calc(100% - ${drawerWidth}px)` }, 
           ml: { md: `${drawerWidth}px` },
           display: { xs: 'block', md: 'none' },
-          bgcolor: 'white', color: '#1e293b', borderBottom: '1px solid #e2e8f0'
+          bgcolor: 'rgba(255, 255, 255, 0.8)',
+          backdropFilter: 'blur(12px)',
+          color: '#1e293b', 
+          borderBottom: '1px solid rgba(226, 232, 240, 0.8)'
         }}
       >
-        <Toolbar>
-          <IconButton color="inherit" edge="start" onClick={handleDrawerToggle} sx={{ mr: 2 }}><MenuIcon /></IconButton>
-          <Typography variant="h6" noWrap fontWeight="900" sx={{ letterSpacing: '-0.02em' }}>Admin Portal</Typography>
+        <Toolbar sx={{ minHeight: { xs: 52, sm: 64 } }}>
+          <IconButton color="inherit" edge="start" onClick={handleDrawerToggle} sx={{ mr: 1.5 }}><MenuIcon /></IconButton>
+          <Typography variant="h6" noWrap fontWeight="900" sx={{ letterSpacing: '-0.02em', fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>Admin Portal</Typography>
         </Toolbar>
       </AppBar>
 

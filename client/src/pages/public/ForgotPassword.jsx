@@ -45,7 +45,7 @@ export default function ForgotPassword() {
       <Paper 
         elevation={4} 
         sx={{ 
-          p: 4, 
+          p: { xs: 2.5, sm: 4 }, 
           maxWidth: 450, 
           width: '100%', 
           borderRadius: 3, 

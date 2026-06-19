@@ -4,7 +4,7 @@ import {
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, CircularProgress, Alert, Tooltip, IconButton, 
   Button, TextField, InputAdornment, MenuItem, Select, FormControl, InputLabel, 
-  Stack, Grid // <--- Added Grid here!
+  Stack, Grid, Card, Divider
 } from '@mui/material';
 
 // Icons
@@ -63,15 +63,18 @@ export default function MyRequests() {
 
   // Unique types for the dropdown
   const docTypes = ['All', ...new Set(requests.map(r => r.type_name))];
-  const statuses = ['All', 'Pending', 'Processing', 'Ready for Pickup', 'Issued', 'Rejected'];
+  const statuses = ['All', 'Pending', 'For Verification', 'For Payment', 'Processing', 'Ready for Pickup', 'Issued', 'Rejected', 'Cancelled'];
 
   const getStatusChip = (status, reason) => {
     const colors = { 
       'Pending': 'warning', 
+      'For Verification': 'info', 
+      'For Payment': 'secondary', 
       'Processing': 'primary', 
       'Ready for Pickup': 'success', 
       'Issued': 'default', 
-      'Rejected': 'error' 
+      'Rejected': 'error',
+      'Cancelled': 'default'
     };
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -173,37 +176,76 @@ export default function MyRequests() {
           </Button>
         </Paper>
       ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-          <Table>
-            <TableHead sx={{ bgcolor: '#f8f9fa' }}>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 'bold' }}>Reference No.</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Document Type</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Date Filed</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 'bold' }}>Pickup Date</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredRequests.map((row) => (
-                <TableRow key={row.request_id} hover>
-                  <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>{row.reference_no}</TableCell>
-                  <TableCell>{row.type_name}</TableCell>
-                  <TableCell>
-                    {new Date(row.date_requested).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </TableCell>
-                  <TableCell>{getStatusChip(row.request_status, row.rejection_reason)}</TableCell>
-                  <TableCell align="right">
-                    {row.pickup_date 
-                      ? <Typography fontWeight="500">{new Date(row.pickup_date).toLocaleDateString()}</Typography>
-                      : <Typography variant="caption" color="text.secondary">TBD</Typography>
-                    }
-                  </TableCell>
+        <>
+          {/* Desktop Table View */}
+          <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', overflowX: 'auto', display: { xs: 'none', md: 'block' } }}>
+            <Table>
+              <TableHead sx={{ bgcolor: '#f8f9fa' }}>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Reference No.</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Document Type</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Date Filed</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>Pickup Date</TableCell>
                 </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredRequests.map((row) => (
+                  <TableRow key={row.request_id} hover>
+                    <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>{row.reference_no}</TableCell>
+                    <TableCell>{row.type_name}</TableCell>
+                    <TableCell>
+                      {new Date(row.date_requested).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </TableCell>
+                    <TableCell>{getStatusChip(row.request_status, row.rejection_reason)}</TableCell>
+                    <TableCell align="right">
+                      {row.pickup_date 
+                        ? <Typography fontWeight="500">{new Date(row.pickup_date).toLocaleDateString()}</Typography>
+                        : <Typography variant="caption" color="text.secondary">TBD</Typography>
+                      }
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          {/* Mobile Card List View */}
+          <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+            <Stack spacing={2}>
+              {filteredRequests.map((row) => (
+                <Card key={row.request_id} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                    <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
+                      {row.reference_no}
+                    </Typography>
+                    {getStatusChip(row.request_status, row.rejection_reason)}
+                  </Box>
+                  <Typography variant="body1" fontWeight="bold" sx={{ mb: 1 }}>
+                    {row.type_name}
+                  </Typography>
+                  <Divider sx={{ my: 1 }} />
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', color: 'text.secondary', fontSize: '0.85rem' }}>
+                    <Box>
+                      <Typography variant="caption" display="block">Filed Date</Typography>
+                      <Typography variant="body2" fontWeight="500">
+                        {new Date(row.date_requested).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="caption" display="block">Pickup Date</Typography>
+                      <Typography variant="body2" fontWeight="500">
+                        {row.pickup_date 
+                          ? new Date(row.pickup_date).toLocaleDateString()
+                          : 'TBD'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Card>
               ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+            </Stack>
+          </Box>
+        </>
       )}
     </Box>
   );

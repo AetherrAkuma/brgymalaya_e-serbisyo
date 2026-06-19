@@ -15,7 +15,6 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 
 import api from '../../utils/axios';
@@ -91,8 +90,6 @@ export default function ResidentDashboard() {
       </Box>
     );
   }
-
-  const progressPct = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', px: { xs: 1, md: 0 } }}>
@@ -196,12 +193,11 @@ export default function ResidentDashboard() {
                   <Typography variant="subtitle1" fontWeight="800" color="#0f172a" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <DescriptionIcon sx={{ color: '#3b82f6', fontSize: 22 }} /> Available Documents
                   </Typography>
-                  {stats.total > 0 && (
+                  {documents.length > 0 && (
                     <Chip
-                      icon={<TrendingUpIcon />}
-                      label={`${progressPct}% completed`}
+                      label={`${documents.length} Services Online`}
                       size="small"
-                      sx={{ fontWeight: 'bold', bgcolor: progressPct > 50 ? '#ecfdf5' : '#fff7ed', color: progressPct > 50 ? '#047857' : '#c2410c', borderRadius: 1 }}
+                      sx={{ fontWeight: 'bold', bgcolor: '#ecfdf5', color: '#047857', borderRadius: 1 }}
                     />
                   )}
                 </Box>

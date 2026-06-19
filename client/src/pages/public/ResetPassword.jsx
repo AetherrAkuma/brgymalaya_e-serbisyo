@@ -63,7 +63,7 @@ export default function ResetPassword() {
   if (isSuccess) {
     return (
       <Box sx={{ display: 'flex', minHeight: '80vh', alignItems: 'center', justifyContent: 'center', px: 2 }}>
-        <Paper elevation={4} sx={{ p: 4, maxWidth: 450, width: '100%', borderRadius: 3, textStyle: 'center', border: '1px solid #e2e8f0' }}>
+        <Paper elevation={4} sx={{ p: { xs: 2.5, sm: 4 }, maxWidth: 450, width: '100%', borderRadius: 3, textStyle: 'center', border: '1px solid #e2e8f0' }}>
           <Stack spacing={3} alignItems="center" textAlign="center">
             <CheckCircleOutlineIcon color="success" sx={{ fontSize: 60 }} />
             <Typography variant="h5" fontWeight="900" color="text.primary">Password Reset Success!</Typography>
@@ -86,7 +86,7 @@ export default function ResetPassword() {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '80vh', alignItems: 'center', justifyContent: 'center', px: 2 }}>
-      <Paper elevation={4} sx={{ p: 4, maxWidth: 450, width: '100%', borderRadius: 3, border: '1px solid #e2e8f0' }}>
+      <Paper elevation={4} sx={{ p: { xs: 2.5, sm: 4 }, maxWidth: 450, width: '100%', borderRadius: 3, border: '1px solid #e2e8f0' }}>
         <Stack spacing={3}>
           <Box>
             <Typography variant="h5" fontWeight="900" color="text.primary" gutterBottom>

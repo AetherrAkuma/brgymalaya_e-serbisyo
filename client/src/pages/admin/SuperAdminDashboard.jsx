@@ -74,7 +74,7 @@ export default function SuperAdminDashboard() {
 
   return (
     <Box sx={{ p: 3, maxWidth: 1400, mx: 'auto' }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2} sx={{ mb: 4 }}>
         <Box>
           <Typography variant="h4" fontWeight="900" sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <AdminPanelSettingsIcon fontSize="large" color="primary" /> Command Center

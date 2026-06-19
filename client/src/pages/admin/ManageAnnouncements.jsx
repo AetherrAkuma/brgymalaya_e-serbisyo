@@ -300,7 +300,7 @@ export default function ManageAnnouncements() {
         </Paper>
       )}
 
-      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3 }}>
+      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3, overflowX: 'auto', display: { xs: 'none', md: 'block' } }}>
         <Table>
           <TableHead sx={{ bgcolor: '#1e293b' }}>
             <TableRow>
@@ -402,6 +402,104 @@ export default function ManageAnnouncements() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* Mobile Card List View */}
+      <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2 }}>
+        {announcements.length === 0 ? (
+          <Paper elevation={0} sx={{ p: 4, textAlign: 'center', border: '1px dashed #cbd5e1', bgcolor: 'transparent' }}>
+            <Typography color="text.secondary">No announcements yet.</Typography>
+          </Paper>
+        ) : (
+          <Stack spacing={2}>
+            {announcements.map((row) => {
+              const statusConfig = STATUS_CONFIG[row.status] || { color: 'default', label: row.status };
+              const isOwn = row.posted_by === parseInt(localStorage.getItem('user_id'));
+              return (
+                <Card 
+                  key={row.announcement_id} 
+                  variant="outlined" 
+                  sx={{ 
+                    borderRadius: 3, 
+                    p: 2, 
+                    border: '1px solid #e2e8f0',
+                    bgcolor: row.is_pinned ? '#fffbeb' : 'inherit',
+                    opacity: row.status === 'Archived' ? 0.7 : 1
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                    <Typography variant="subtitle1" fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      {row.is_pinned === 1 && <PushPinIcon color="warning" fontSize="small" />}
+                      {row.title}
+                    </Typography>
+                    <Chip label={statusConfig.label} color={statusConfig.color} size="small" sx={{ fontWeight: 'bold' }} />
+                  </Box>
+
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    By {row.posted_by_name || 'Unknown'} &middot; {new Date(row.date_posted).toLocaleDateString()}
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    <Typography variant="caption" color="text.secondary">Audience:</Typography>
+                    <Chip label={row.target_audience} size="small" variant="outlined" sx={{ fontSize: '0.65rem', height: 20 }} />
+                    
+                    {row.status === 'Pending Approval' && isOwn && isAdmin && (
+                      <Typography variant="caption" color="info.main" sx={{ fontStyle: 'italic', fontSize: '0.65rem' }}>
+                        Awaiting review
+                      </Typography>
+                    )}
+                    {row.status === 'Draft' && rejectionReasons[row.announcement_id] && isOwn && (
+                      <Tooltip title={`Rejected: ${rejectionReasons[row.announcement_id]}`} arrow>
+                        <Typography variant="caption" color="error" sx={{ fontStyle: 'italic', cursor: 'pointer', fontSize: '0.65rem' }}>
+                          View rejection reason
+                        </Typography>
+                      </Tooltip>
+                    )}
+                  </Box>
+
+                  <Divider sx={{ my: 1.5 }} />
+
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
+                    {row.status !== 'Pending Approval' && (
+                      <IconButton size="small" color="primary" onClick={() => handleOpenModal(row)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                    {row.status !== 'Pending Approval' && (
+                      <Button size="small" variant="outlined"
+                        color={row.status === 'Published' ? 'warning' : 'success'}
+                        onClick={() => handleToggleStatus(row.announcement_id, row.status, row.is_pinned)}
+                        sx={{ fontSize: '0.7rem', textTransform: 'none', py: 0.5, px: 1.5, borderRadius: 2 }}>
+                        {row.status === 'Published' ? 'Archive' : 'Publish'}
+                      </Button>
+                    )}
+                    {row.status === 'Pending Approval' && isCaptainOrSecretary && (
+                      <>
+                        <Button size="small" variant="contained" color="success" onClick={() => handleApprove(row.announcement_id)}
+                          sx={{ fontSize: '0.7rem', textTransform: 'none', py: 0.5, px: 1.5, borderRadius: 2 }}>
+                          Approve
+                        </Button>
+                        <Button size="small" variant="outlined" color="error" onClick={() => openRejectDialog(row)}
+                          sx={{ fontSize: '0.7rem', textTransform: 'none', py: 0.5, px: 1.5, borderRadius: 2 }}>
+                          Reject
+                        </Button>
+                      </>
+                    )}
+                    <IconButton size="small" color={row.is_pinned ? 'warning' : 'default'}
+                      onClick={() => handleTogglePin(row.announcement_id, row.status, row.is_pinned)}>
+                      <PushPinIcon fontSize="small" />
+                    </IconButton>
+                    {canDelete && (
+                      <IconButton size="small" color="error" onClick={() => handleDelete(row.announcement_id)}>
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Box>
+                </Card>
+              );
+            })}
+          </Stack>
+        )}
+      </Box>
 
       <Dialog open={modalOpen} onClose={handleCloseModal} maxWidth="md" fullWidth>
         <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>

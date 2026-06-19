@@ -1442,6 +1442,63 @@ app.put('/api/v1/residents/me/id-proof', verifyJWT, roleGuard(['Resident']), fil
     }
 });
 
+// Endpoint 24.5a: Get Resident's Own ID Proof (Resident Only)
+app.get('/api/v1/residents/me/id-proof', verifyJWT, roleGuard(['Resident']), async (req, res) => {
+    try {
+        const residentId = req.user.id;
+        const [rows] = await db.query(
+            'SELECT id_proof_image FROM tbl_Residents WHERE resident_id = ?',
+            [residentId]
+        );
+
+        if (rows.length === 0 || !rows[0].id_proof_image) {
+            return res.status(404).json({ status: 'error', message: 'ID Proof not found.' });
+        }
+
+        const filename = rows[0].id_proof_image;
+        const decryptedBuffer = decryptFileBuffer(filename);
+
+        let mimeType = 'application/octet-stream';
+        if (filename.toLowerCase().includes('.png')) mimeType = 'image/png';
+        else if (filename.toLowerCase().includes('.jpg') || filename.toLowerCase().includes('.jpeg')) mimeType = 'image/jpeg';
+        else if (filename.toLowerCase().includes('.pdf')) mimeType = 'application/pdf';
+
+        res.setHeader('Content-Type', mimeType);
+        res.send(decryptedBuffer);
+    } catch (error) {
+        console.error("[RESIDENT GET ID PROOF ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint 24.5b: Update Resident ID Proof File (Resident Only)
+app.put('/api/v1/residents/me/update-id', verifyJWT, roleGuard(['Resident']), fileUploadLimiter, upload.single('id_proof_image'), async (req, res) => {
+    try {
+        const residentId = req.user.id;
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ status: 'error', message: 'No file uploaded.' });
+        }
+
+        const idFile = req.file;
+        let ext = '.bin';
+        if (idFile.mimetype === 'image/jpeg') ext = '.jpg';
+        else if (idFile.mimetype === 'image/png') ext = '.png';
+        else if (idFile.mimetype === 'application/pdf') ext = '.pdf';
+
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const savedFilename = `idproof_reg_${uniqueSuffix}${ext}.enc`;
+
+        encryptAndSaveFile(idFile.buffer, savedFilename);
+
+        await db.query('UPDATE tbl_Residents SET id_proof_image = ? WHERE resident_id = ?', [savedFilename, residentId]);
+
+        res.status(200).json({ status: 'success', message: 'ID Proof updated successfully.', filename: savedFilename });
+    } catch (error) {
+        console.error("[UPDATE ID PROOF ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
 // Endpoint 24.6: Get My Profile (Resident Only)
 app.get('/api/v1/residents/me/profile', verifyJWT, roleGuard(['Resident']), async (req, res) => {
     try {
@@ -1449,7 +1506,7 @@ app.get('/api/v1/residents/me/profile', verifyJWT, roleGuard(['Resident']), asyn
 
         // 1. Match the real column names: address_street and contact_number
         const [rows] = await db.query(
-            'SELECT first_name, last_name, email_address, contact_number, address_street, account_status FROM tbl_Residents WHERE resident_id = ?',
+            'SELECT first_name, last_name, email_address, contact_number, address_street, account_status, id_proof_image FROM tbl_Residents WHERE resident_id = ?',
             [residentId]
         );
 

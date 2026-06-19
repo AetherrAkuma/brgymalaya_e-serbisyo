@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { 
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, Button, Dialog, DialogTitle, 
-  DialogContent, DialogActions, Grid, TextField, InputAdornment, Tooltip, CircularProgress
+  DialogContent, DialogActions, Grid, TextField, InputAdornment, Tooltip, CircularProgress,
+  Card, Divider, Stack
 } from '@mui/material';
 
 // Icons
@@ -157,8 +158,8 @@ export default function ManageResidents() {
         }}
       />
 
-      {/* RESIDENTS TABLE */}
-      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3, overflow: 'hidden' }}>
+      {/* RESIDENTS TABLE (Desktop) */}
+      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3, overflowX: 'auto', display: { xs: 'none', md: 'block' } }}>
         <Table sx={{ minWidth: 800 }}>
           <TableHead sx={{ bgcolor: '#1e293b' }}>
             <TableRow>
@@ -175,7 +176,7 @@ export default function ManageResidents() {
             ) : (
               filteredResidents.map((row) => (
                 <TableRow key={row.resident_id} hover>
-                  <TableCell fontWeight="bold">{row.first_name} {row.last_name}</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>{row.first_name} {row.last_name}</TableCell>
                   <TableCell>{row.email_address}</TableCell>
                   <TableCell>{row.address_street}</TableCell>
                   <TableCell>
@@ -200,8 +201,47 @@ export default function ManageResidents() {
         </Table>
       </TableContainer>
 
+      {/* Mobile Card List View */}
+      <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+        {filteredResidents.length === 0 ? (
+          <Paper elevation={0} sx={{ p: 4, textAlign: 'center', border: '1px dashed #cbd5e1', bgcolor: 'transparent' }}>
+            <Typography color="text.secondary">No residents found.</Typography>
+          </Paper>
+        ) : (
+          <Stack spacing={2}>
+            {filteredResidents.map((row) => (
+              <Card key={row.resident_id} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight="bold">{row.first_name} {row.last_name}</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">{row.email_address}</Typography>
+                  </Box>
+                  <Chip label={row.account_status} color={getStatusColor(row.account_status)} size="small" sx={{ fontWeight: 'bold' }} />
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  <strong>Address:</strong> {row.address_street}
+                </Typography>
+                <Divider sx={{ my: 1.5 }} />
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    color="primary"
+                    onClick={() => handleOpenModal(row)}
+                    startIcon={<VisibilityIcon />}
+                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold' }}
+                  >
+                    View Profile
+                  </Button>
+                </Box>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       {/* VERIFICATION MODAL */}
-      <Dialog open={modalOpen} onClose={handleCloseModal} maxWidth="md" fullWidth>
+      <Dialog open={modalOpen} onClose={handleCloseModal} maxWidth="md" fullWidth disableRestoreFocus>
         {selectedUser && (
           <>
             <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white', fontWeight: 'bold' }}>
@@ -330,7 +370,7 @@ export default function ManageResidents() {
       </Dialog>
 
       {/* REJECT REGISTRATION DIALOG */}
-      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} maxWidth="sm" fullWidth disableRestoreFocus PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
           <HighlightOffIcon color="error" /> Reject Registration
         </DialogTitle>

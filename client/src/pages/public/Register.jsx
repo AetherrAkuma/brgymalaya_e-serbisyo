@@ -648,7 +648,7 @@ export default function Register() {
                     } 
                   }}
                 >
-                  <Typography variant="caption" fontWeight={activeStep >= idx ? 'bold' : 'normal'}>
+                  <Typography variant="caption" fontWeight={activeStep >= idx ? 'bold' : 'normal'} sx={{ display: { xs: 'none', sm: 'block' } }}>
                     {label}
                   </Typography>
                 </StepLabel>

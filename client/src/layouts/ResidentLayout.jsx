@@ -111,19 +111,22 @@ export default function ResidentLayout() {
       {/* TOP APP BAR (Only visible on Mobile to show the hamburger menu) */}
       <AppBar 
         position="fixed" 
+        elevation={0}
         sx={{ 
           width: { md: `calc(100% - ${drawerWidth}px)` }, 
           ml: { md: `${drawerWidth}px` },
           display: { xs: 'block', md: 'none' }, // Hide on desktop
-          bgcolor: 'white',
-          color: 'primary.main'
+          bgcolor: 'rgba(255, 255, 255, 0.8)',
+          backdropFilter: 'blur(12px)',
+          color: 'primary.main',
+          borderBottom: '1px solid rgba(226, 232, 240, 0.8)'
         }}
       >
-        <Toolbar>
-          <IconButton color="inherit" edge="start" onClick={handleDrawerToggle} sx={{ mr: 2 }}>
+        <Toolbar sx={{ minHeight: { xs: 52, sm: 64 } }}>
+          <IconButton color="inherit" edge="start" onClick={handleDrawerToggle} sx={{ mr: 1.5 }}>
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" fontWeight="bold">
+          <Typography variant="h6" noWrap component="div" fontWeight="bold" sx={{ fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>
             Barangay Malaya
           </Typography>
         </Toolbar>

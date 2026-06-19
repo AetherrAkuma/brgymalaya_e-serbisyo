@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { 
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, Button, CircularProgress, Dialog, DialogTitle, 
-  DialogContent, DialogActions, Grid, Divider, Stack, TextField, InputAdornment, Tooltip, IconButton, useTheme
+  DialogContent, DialogActions, Grid, Divider, Stack, TextField, InputAdornment, Tooltip, IconButton, useTheme,
+  Card
 } from '@mui/material';
 
 // Icons for a professional civic look
@@ -212,8 +213,8 @@ export default function RequestsQueue() {
         </Stack>
       </Stack>
 
-      {/* QUEUE TABLE */}
-      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+      {/* QUEUE TABLE (Desktop) */}
+      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid #e2e8f0', overflowX: 'auto', display: { xs: 'none', md: 'block' } }}>
         <Table>
           <TableHead sx={{ bgcolor: '#f8fafc' }}>
             <TableRow>
@@ -254,7 +255,6 @@ export default function RequestsQueue() {
                 <TableCell align="center">
                   <Stack direction="row" spacing={1} justifyContent="center">
                     
-                    {/* Role & Status Based Workflow */}
                     {row.request_status === 'Pending' && isSecretaryOrAdmin && (
                         <Button variant="contained" color="warning" size="small" onClick={() => handleOpenReview(row)} disabled={!!processingAction} sx={{ borderRadius: '8px', fontWeight: 'bold', px: 2 }}>Review</Button>
                     )}
@@ -268,17 +268,17 @@ export default function RequestsQueue() {
                     {row.request_status === 'Processing' && isSecretaryOrAdmin && (
                         <>
                             <Button variant="contained" size="small" sx={{ bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' }, borderRadius: '8px', fontWeight: 'bold' }} startIcon={processingAction === 'print' ? <CircularProgress size={18} color="inherit" /> : <PrintIcon />} onClick={() => handlePrintPDF(row.request_id, row.reference_no)} disabled={!!processingAction} className={processingAction === 'print' ? 'btn-loading' : ''}>
-                                {processingAction === 'print' ? 'Printing...' : 'Print'}
+                                Print
                             </Button>
                             <Button variant="contained" size="small" color="primary" startIcon={processingAction === 'ready' ? <CircularProgress size={18} color="inherit" /> : <TaskAltIcon />} onClick={() => handleUpdateStatus(row.request_id, 'ready')} disabled={!!processingAction} className={processingAction === 'ready' ? 'btn-loading' : ''} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
-                                {processingAction === 'ready' ? 'Updating...' : 'Mark Ready'}
+                                Mark Ready
                             </Button>
                         </>
                     )}
 
                     {row.request_status === 'Ready for Pickup' && isSecretaryOrAdmin && (
                         <Button variant="contained" size="small" color="success" startIcon={processingAction === 'issue' ? <CircularProgress size={18} color="inherit" /> : <AssignmentTurnedInIcon />} onClick={() => handleUpdateStatus(row.request_id, 'issue')} disabled={!!processingAction} className={processingAction === 'issue' ? 'btn-loading' : ''} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
-                            {processingAction === 'issue' ? 'Issuing...' : 'Final Issue'}
+                            Final Issue
                         </Button>
                     )}
 
@@ -300,8 +300,79 @@ export default function RequestsQueue() {
         )}
       </TableContainer>
 
+      {/* Mobile Card List View */}
+      <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2 }}>
+        {filteredRequests.length === 0 ? (
+          <Paper elevation={0} sx={{ p: 4, textAlign: 'center', border: '1px dashed #cbd5e1', bgcolor: 'transparent' }}>
+            <Typography color="text.secondary">No requests matching your criteria were found.</Typography>
+          </Paper>
+        ) : (
+          <Stack spacing={2}>
+            {filteredRequests.map((row) => (
+              <Card key={row.request_id} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                  <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
+                    {row.reference_no}
+                  </Typography>
+                  {getStatusChip(row.request_status)}
+                </Box>
+                <Typography variant="body1" fontWeight="bold">
+                  {row.first_name} {row.last_name}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <DescriptionIcon sx={{ fontSize: 16 }} /> {row.type_name}
+                </Typography>
+                <Typography variant="body2" fontWeight="bold" sx={{ mt: 0.5 }}>
+                  Fee: ₱{row.base_fee}
+                </Typography>
+                <Divider sx={{ my: 1.5 }} />
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
+                  
+                  {row.request_status === 'Pending' && isSecretaryOrAdmin && (
+                    <Button variant="contained" color="warning" size="small" onClick={() => handleOpenReview(row)} disabled={!!processingAction} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>Review</Button>
+                  )}
+
+                  {row.request_status === 'For Payment' && isTreasurerOrAdmin && (
+                    <Button variant="contained" color="info" size="small" startIcon={<PaymentsOutlinedIcon />} onClick={() => { setSelectedReq(row); setPaymentModalOpen(true); }} disabled={!!processingAction} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                      Collect
+                    </Button>
+                  )}
+
+                  {row.request_status === 'Processing' && isSecretaryOrAdmin && (
+                    <>
+                      <Button variant="contained" size="small" sx={{ bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' }, borderRadius: '8px', fontWeight: 'bold' }} startIcon={processingAction === 'print' ? <CircularProgress size={16} color="inherit" /> : <PrintIcon />} onClick={() => handlePrintPDF(row.request_id, row.reference_no)} disabled={!!processingAction} className={processingAction === 'print' ? 'btn-loading' : ''}>
+                        Print
+                      </Button>
+                      <Button variant="contained" size="small" color="primary" startIcon={processingAction === 'ready' ? <CircularProgress size={16} color="inherit" /> : <TaskAltIcon />} onClick={() => handleUpdateStatus(row.request_id, 'ready')} disabled={!!processingAction} className={processingAction === 'ready' ? 'btn-loading' : ''} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                        Mark Ready
+                      </Button>
+                    </>
+                  )}
+
+                  {row.request_status === 'Ready for Pickup' && isSecretaryOrAdmin && (
+                    <Button variant="contained" size="small" color="success" startIcon={processingAction === 'issue' ? <CircularProgress size={16} color="inherit" /> : <AssignmentTurnedInIcon />} onClick={() => handleUpdateStatus(row.request_id, 'issue')} disabled={!!processingAction} className={processingAction === 'issue' ? 'btn-loading' : ''} sx={{ borderRadius: '8px', fontWeight: 'bold' }}>
+                      Final Issue
+                    </Button>
+                  )}
+
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<VisibilityIcon />}
+                    onClick={() => handleOpenReview(row)}
+                    sx={{ borderRadius: '8px', fontWeight: 'bold', textTransform: 'none' }}
+                  >
+                    View Details
+                  </Button>
+                </Box>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       {/* --- REVIEW MODAL (Modern Layout) --- */}
-      <Dialog open={reviewModalOpen} onClose={handleCloseAll} maxWidth="lg" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>
+      <Dialog open={reviewModalOpen} onClose={handleCloseAll} maxWidth="lg" fullWidth disableRestoreFocus PaperProps={{ sx: { borderRadius: 4 } }}>
         {selectedReq && (
           <>
             <DialogTitle sx={{ bgcolor: theme.palette.primary.main, color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -364,7 +435,7 @@ export default function RequestsQueue() {
       </Dialog>
 
       {/* --- REJECTION DIALOG --- */}
-      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} PaperProps={{ sx: { borderRadius: 4 } }}>
+      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} disableRestoreFocus PaperProps={{ sx: { borderRadius: 4 } }}>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Rejection Reason</DialogTitle>
         <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>This will be sent to the resident's dashboard.</Typography>
@@ -377,7 +448,7 @@ export default function RequestsQueue() {
       </Dialog>
 
       {/* --- PAYMENT MODAL --- */}
-      <Dialog open={paymentModalOpen} onClose={handleCloseAll} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>
+      <Dialog open={paymentModalOpen} onClose={handleCloseAll} maxWidth="xs" fullWidth disableRestoreFocus PaperProps={{ sx: { borderRadius: 4 } }}>
         {selectedReq && (
             <>
                 <DialogTitle sx={{ bgcolor: theme.palette.success.main, color: 'white', textAlign: 'center', fontWeight: '900' }}>

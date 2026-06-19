@@ -20,6 +20,8 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [idLoading, setIdLoading] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -35,6 +37,31 @@ export default function Profile() {
     fetchProfile();
   }, []);
 
+  useEffect(() => {
+    let activeUrl = null;
+    const fetchIdProof = async () => {
+      if (profile && profile.id_proof_image) {
+        setIdLoading(true);
+        try {
+          const response = await api.get('/residents/me/id-proof', { responseType: 'blob' });
+          const url = URL.createObjectURL(response.data);
+          activeUrl = url;
+          setPreviewUrl(url);
+        } catch (err) {
+          console.error("Failed to load resident ID proof:", err);
+        } finally {
+          setIdLoading(false);
+        }
+      }
+    };
+    fetchIdProof();
+    return () => {
+      if (activeUrl) {
+        URL.revokeObjectURL(activeUrl);
+      }
+    };
+  }, [profile]);
+
   const handleIdUpload = async (e) => {
     if (!e.target.files[0]) return;
     setUploading(true);
@@ -42,10 +69,13 @@ export default function Profile() {
     formData.append('id_proof_image', e.target.files[0]);
 
     try {
-      await api.put('/residents/me/update-id', formData, {
+      const res = await api.put('/residents/me/update-id', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      setMsg({ type: 'success', text: 'ID Proof successfully submitted for re-verification.' });
+      setMsg({ type: 'success', text: 'ID Proof successfully submitted for verification.' });
+      if (res.data.filename) {
+        setProfile(prev => ({ ...prev, id_proof_image: res.data.filename }));
+      }
     } catch (err) {
       setMsg({ type: 'error', text: 'Failed to upload ID. Please check the file size and try again.' });
     } finally {
@@ -161,35 +191,102 @@ export default function Profile() {
             <Card elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', bgcolor: 'rgba(0,0,0,0.02)' }}>
               <CardContent sx={{ p: 3 }}>
                 <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Verification Status</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                  Your ID proof is required to verify your residency and process documents.
-                </Typography>
                 
-                <Box 
-                  sx={{ 
-                    p: 3, 
-                    border: '2px dashed', 
-                    borderColor: 'primary.light', 
-                    borderRadius: 3, 
-                    textAlign: 'center',
-                    bgcolor: 'background.paper'
-                  }}
-                >
-                  <Button 
-                    component="label" 
-                    variant="contained" 
-                    disableElevation
-                    startIcon={uploading ? <CircularProgress size={20} color="inherit" /> : <CloudUploadIcon />}
-                    disabled={uploading}
-                    sx={{ borderRadius: 2 }}
-                  >
-                    {uploading ? 'Processing...' : 'Update ID Proof'}
-                    <input type="file" hidden accept="image/*" onChange={handleIdUpload} />
-                  </Button>
-                  <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
-                    JPG, PNG or PDF (Max 5MB)
-                  </Typography>
-                </Box>
+                {profile?.id_proof_image ? (
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Your registered Identity verification document is stored securely. For security and compliance, this document cannot be modified or removed.
+                    </Typography>
+                    
+                    <Box 
+                      sx={{ 
+                        p: 1.5, 
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 3, 
+                        textAlign: 'center',
+                        bgcolor: 'background.paper',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minHeight: 180
+                      }}
+                    >
+                      {idLoading ? (
+                        <Box sx={{ py: 4 }}>
+                          <CircularProgress size={28} />
+                          <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
+                            Decrypting secure ID proof...
+                          </Typography>
+                        </Box>
+                      ) : previewUrl ? (
+                        <>
+                          <Box sx={{ width: '100%', maxHeight: 200, display: 'flex', justifyContent: 'center', overflow: 'hidden', borderRadius: 2 }}>
+                            {profile.id_proof_image.toLowerCase().endsWith('.pdf') || profile.id_proof_image.toLowerCase().includes('.pdf') ? (
+                              <Stack spacing={2} alignItems="center" sx={{ py: 2 }}>
+                                <VerifiedUserOutlinedIcon sx={{ fontSize: 48, color: 'success.main' }} />
+                                <Button 
+                                  variant="outlined" 
+                                  size="small" 
+                                  href={previewUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  sx={{ borderRadius: 2, textTransform: 'none' }}
+                                >
+                                  View Submitted PDF ID
+                                </Button>
+                              </Stack>
+                            ) : (
+                              <img src={previewUrl} alt="Submitted ID Proof" style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain' }} />
+                            )}
+                          </Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, fontWeight: '500' }}>
+                            Official ID Document Submitted
+                          </Typography>
+                        </>
+                      ) : (
+                        <Box sx={{ py: 4 }}>
+                          <Typography variant="body2" color="text.secondary">
+                            Identity Document verified.
+                          </Typography>
+                        </Box>
+                      )}
+                    </Box>
+                  </Box>
+                ) : (
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                      Your ID proof is required to verify your residency and process documents.
+                    </Typography>
+                    
+                    <Box 
+                      sx={{ 
+                        p: 3, 
+                        border: '2px dashed', 
+                        borderColor: 'primary.light', 
+                        borderRadius: 3, 
+                        textAlign: 'center',
+                        bgcolor: 'background.paper'
+                      }}
+                    >
+                      <Button 
+                        component="label" 
+                        variant="contained" 
+                        disableElevation
+                        startIcon={uploading ? <CircularProgress size={20} color="inherit" /> : <CloudUploadIcon />}
+                        disabled={uploading}
+                        sx={{ borderRadius: 2 }}
+                      >
+                        {uploading ? 'Processing...' : 'Upload ID Proof'}
+                        <input type="file" hidden accept="image/*,application/pdf" onChange={handleIdUpload} />
+                      </Button>
+                      <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
+                        JPG, PNG or PDF (Max 5MB)
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
               </CardContent>
             </Card>
 

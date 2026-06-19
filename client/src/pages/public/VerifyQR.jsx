@@ -273,11 +273,11 @@ export default function VerifyQR() {
         <Typography variant="h6" fontWeight="bold" color="primary">E-Serbisyo Verification</Typography>
       </Box>
 
-      <Paper elevation={4} sx={{ p: 4, borderRadius: 4, border: '1px solid #e2e8f0', bgcolor: 'white' }}>
+      <Paper elevation={4} sx={{ p: { xs: 2.5, sm: 4 }, borderRadius: 4, border: '1px solid #e2e8f0', bgcolor: 'white' }}>
         
         <Box textAlign="center" sx={{ mb: 4 }}>
           <QrCodeScannerIcon color="primary" sx={{ fontSize: 50, mb: 1 }} />
-          <Typography variant="h4" fontWeight="900" color="#0f172a" gutterBottom>
+          <Typography variant="h4" fontWeight="900" color="#0f172a" gutterBottom sx={{ fontSize: { xs: '1.6rem', sm: '2.125rem' } }}>
             Verify Barangay Document
           </Typography>
           <Typography variant="body2" color="text.secondary">
@@ -379,7 +379,7 @@ export default function VerifyQR() {
         {/* ========================================== */}
         {tabValue === 2 && (
           <form onSubmit={handleManualSearch}>
-            <Stack spacing={2} direction="row">
+            <Stack spacing={2} direction={{ xs: 'column', sm: 'row' }}>
               <TextField
                 fullWidth
                 label="Verification Code / Reference URL"
@@ -393,7 +393,7 @@ export default function VerifyQR() {
                 type="submit" 
                 variant="contained" 
                 startIcon={<SearchIcon />}
-                sx={{ px: 3, borderRadius: 2 }}
+                sx={{ px: 3, py: { xs: 1.5, sm: 'auto' }, borderRadius: 2, width: { xs: '100%', sm: 'auto' } }}
               >
                 Verify
               </Button>

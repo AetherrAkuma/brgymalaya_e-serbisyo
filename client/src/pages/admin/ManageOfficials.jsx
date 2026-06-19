@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { 
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, Button, Dialog, DialogTitle, DialogContent, 
-  DialogActions, TextField, MenuItem, Stack, IconButton, CircularProgress 
+  DialogActions, TextField, MenuItem, Stack, IconButton, CircularProgress,
+  Card, Divider
 } from '@mui/material';
 
 // Icons for the Administrative UI
@@ -123,8 +124,8 @@ export default function ManageOfficials() {
         </Button>
       </Stack>
 
-      {/* STAFF DIRECTORY TABLE */}
-      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+      {/* STAFF DIRECTORY TABLE (Desktop) */}
+      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 4, border: '1px solid #e2e8f0', overflowX: 'auto', display: { xs: 'none', md: 'block' } }}>
         <Table>
           <TableHead sx={{ bgcolor: '#f8fafc' }}>
             <TableRow>
@@ -202,8 +203,73 @@ export default function ManageOfficials() {
         </Table>
       </TableContainer>
 
+      {/* Mobile Card List View */}
+      <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+        {officials.length === 0 ? (
+          <Paper elevation={0} sx={{ p: 4, textAlign: 'center', border: '1px dashed #cbd5e1', bgcolor: 'transparent' }}>
+            <Typography color="text.secondary">No staff accounts managed yet.</Typography>
+          </Paper>
+        ) : (
+          <Stack spacing={2}>
+            {officials.map((o) => (
+              <Card key={o.user_id} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight="bold" color="primary.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                      <BadgeIcon fontSize="inherit" /> {o.official_id}
+                    </Typography>
+                    <Typography variant="body1" fontWeight="bold">{o.full_name}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                      <EmailIcon sx={{ fontSize: 12 }} /> {o.email_official}
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Chip 
+                      label={o.role} 
+                      size="small" 
+                      variant="outlined" 
+                      color={o.role === 'Captain' ? 'secondary' : 'primary'} 
+                      sx={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.6rem' }} 
+                    />
+                    <Chip 
+                      label={o.account_status} 
+                      size="small" 
+                      color={o.account_status === 'Active' ? 'success' : 'default'} 
+                      sx={{ fontWeight: 'bold' }} 
+                    />
+                  </Stack>
+                </Box>
+                <Divider sx={{ my: 1.5 }} />
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    color={o.account_status === 'Active' ? 'warning' : 'success'}
+                    onClick={() => handleToggleStatus(o.user_id, o.account_status)}
+                    startIcon={o.account_status === 'Active' ? <ToggleOffIcon /> : <ToggleOnIcon />}
+                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold' }}
+                  >
+                    {o.account_status === 'Active' ? 'Deactivate' : 'Activate'}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    color="error"
+                    onClick={() => handleDelete(o.user_id, o.full_name)}
+                    startIcon={<DeleteIcon />}
+                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 'bold' }}
+                  >
+                    Delete
+                  </Button>
+                </Box>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       {/* REGISTRATION MODAL */}
-      <Dialog open={modalOpen} onClose={() => setModalOpen(false)} fullWidth maxWidth="sm" PaperProps={{ sx: { borderRadius: 4 } }}>
+      <Dialog open={modalOpen} onClose={() => setModalOpen(false)} fullWidth maxWidth="sm" disableRestoreFocus PaperProps={{ sx: { borderRadius: 4 } }}>
         <DialogTitle sx={{ fontWeight: 'bold', bgcolor: '#f8fafc', py: 2.5 }}>Register Authorized Official</DialogTitle>
         <DialogContent dividers sx={{ p: 4 }}>
           <Stack spacing={3} sx={{ mt: 1 }}>

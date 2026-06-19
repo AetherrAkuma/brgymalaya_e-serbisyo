@@ -543,7 +543,7 @@ export default function Dashboard() {
             View Payments Desk
           </Button>
         </Box>
-        <TableContainer>
+        <TableContainer sx={{ overflowX: 'auto' }}>
           <Table size="small">
             <TableHead sx={{ bgcolor: '#f8fafc' }}>
               <TableRow>
@@ -973,7 +973,7 @@ export default function Dashboard() {
               Full Queue Desk
             </Button>
           </Box>
-          <TableContainer>
+          <TableContainer sx={{ overflowX: 'auto' }}>
             <Table size="small">
               <TableHead sx={{ bgcolor: '#f8fafc' }}>
                 <TableRow>
@@ -1194,10 +1194,10 @@ export default function Dashboard() {
           alignItems: 'stretch'
         }}>
           {/* CHART 1: 7-DAY VOLUME */}
-          <Box sx={{ flex: 2, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320 }}>
+          <Box sx={{ flex: 2, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320, minWidth: 0 }}>
             <Typography variant="subtitle2" fontWeight="800" color="text.secondary" gutterBottom>7-DAY REQUEST VOLUME</Typography>
-            <Box sx={{ height: 250, width: '100%', mt: 2 }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <Box sx={{ height: 250, width: '100%', mt: 2, minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorCountStandard" x1="0" y1="0" x2="0" y2="1">
@@ -1216,10 +1216,10 @@ export default function Dashboard() {
           </Box>
 
           {/* CHART 2: DOCUMENT DEMAND */}
-          <Box sx={{ flex: 1, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320 }}>
+          <Box sx={{ flex: 1, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320, minWidth: 0 }}>
             <Typography variant="subtitle2" fontWeight="800" color="text.secondary" gutterBottom>DOCUMENT DEMAND</Typography>
-            <Box sx={{ height: 250, width: '100%', mt: 2 }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <Box sx={{ height: 250, width: '100%', mt: 2, minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
                   <Pie data={documentDemand} cx="50%" cy="50%" innerRadius="50%" outerRadius="80%" paddingAngle={3} dataKey="value" stroke="none">
                     {documentDemand.map((entry, index) => <Cell key={`cell-${index}`} fill={ADMIN_COLORS[index % ADMIN_COLORS.length]} />)}
@@ -1232,10 +1232,10 @@ export default function Dashboard() {
           </Box>
 
           {/* CHART 3: BOTTLENECKS */}
-          <Box sx={{ flex: 1.5, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320 }}>
+          <Box sx={{ flex: 1.5, bgcolor: '#f8fafc', p: 3, borderRadius: 3, border: '1px solid #e2e8f0', minHeight: 320, minWidth: 0 }}>
             <Typography variant="subtitle2" fontWeight="800" color="text.secondary" gutterBottom>WORKFLOW BOTTLENECKS</Typography>
-            <Box sx={{ height: 250, width: '100%', mt: 2 }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <Box sx={{ height: 250, width: '100%', mt: 2, minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart layout="vertical" data={[{name: 'Queue', Pending: stats.pending, 'For Payment': stats.forPayment, Processing: stats.processing}]} margin={{ top: 30, right: 30, left: -20, bottom: 20 }}>
                   <XAxis type="number" hide />
                   <YAxis dataKey="name" type="category" hide />
@@ -1264,7 +1264,7 @@ export default function Dashboard() {
                 View All
               </Button>
             </Box>
-            <TableContainer>
+            <TableContainer sx={{ overflowX: 'auto' }}>
               <Table>
                 <TableHead sx={{ bgcolor: '#f8fafc' }}>
                   <TableRow>

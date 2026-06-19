@@ -3,7 +3,7 @@ import {
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Chip, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Stack, IconButton, InputAdornment, Switch,
-  FormControlLabel, CircularProgress, Alert
+  FormControlLabel, CircularProgress, Alert, Card, Divider
 } from '@mui/material';
 
 // Icons
@@ -201,7 +201,7 @@ export default function ManageDocuments() {
         )}
       </Box>
 
-      <TableContainer component={Paper} elevation={2} sx={{ borderRadius: 3 }}>
+      <TableContainer component={Paper} elevation={2} sx={{ borderRadius: 3, overflowX: 'auto', display: { xs: 'none', md: 'block' } }}>
         <Table>
           <TableHead sx={{ bgcolor: '#0f172a' }}>
             <TableRow>
@@ -235,7 +235,64 @@ export default function ManageDocuments() {
         </Table>
       </TableContainer>
 
-      <Dialog open={layoutModalOpen} onClose={handleCloseLayout} maxWidth="lg" fullWidth>
+      {/* Mobile Card List View */}
+      <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2 }}>
+        {documents.length === 0 ? (
+          <Paper elevation={0} sx={{ p: 4, textAlign: 'center', border: '1px dashed #cbd5e1', bgcolor: 'transparent' }}>
+            <Typography color="text.secondary">No documents found.</Typography>
+          </Paper>
+        ) : (
+          <Stack spacing={2}>
+            {documents.map((row) => (
+              <Card key={row.doc_type_id} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                  <Typography variant="subtitle1" fontWeight="bold">
+                    {row.type_name}
+                  </Typography>
+                  {row.template_file ? (
+                    <Chip label="Uploaded" color="success" size="small" />
+                  ) : (
+                    <Chip label="Missing" color="error" size="small" />
+                  )}
+                </Box>
+                
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  Base Fee: ₱{row.base_fee}
+                </Typography>
+                
+                {row.description && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    {row.description}
+                  </Typography>
+                )}
+                
+                <Divider sx={{ my: 1.5 }} />
+                
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  {!isViewOnly && (
+                    <>
+                      <IconButton color="primary" onClick={() => handleOpenEdit(row)} size="small">
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <Button size="small" variant="outlined" onClick={() => handleOpenTemplate(row)} sx={{ fontSize: '0.7rem' }}>
+                        Background
+                      </Button>
+                      <Button size="small" variant="outlined" color="secondary" onClick={() => handleOpenLayout(row)} sx={{ fontSize: '0.7rem' }}>
+                        Layout
+                      </Button>
+                    </>
+                  )}
+                  <Button size="small" variant="outlined" color="primary" onClick={() => handleTestPrintRow(row)} sx={{ fontSize: '0.7rem' }}>
+                    Test Print
+                  </Button>
+                </Box>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
+      <Dialog open={layoutModalOpen} onClose={handleCloseLayout} maxWidth="lg" fullWidth disableRestoreFocus>
         <DialogTitle sx={{ bgcolor: '#0f172a', color: 'white', display: 'flex', justifyContent: 'space-between' }}>
           Visual Layout Mapper: {selectedDoc?.type_name}
           <Typography variant="caption">A4 (595x842 pt)</Typography>
@@ -310,7 +367,7 @@ export default function ManageDocuments() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={templateModalOpen} onClose={() => setTemplateModalOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={templateModalOpen} onClose={() => setTemplateModalOpen(false)} maxWidth="xs" fullWidth disableRestoreFocus>
         <DialogTitle>Background Template</DialogTitle>
         <DialogContent dividers sx={{ textAlign: 'center' }}>
           {uploadMsg.text && <Alert severity={uploadMsg.type} sx={{ mb: 2 }}>{uploadMsg.text}</Alert>}
@@ -351,7 +408,7 @@ export default function ManageDocuments() {
       </Dialog>
 
       {/* Edit/Add Document Dialog */}
-      <Dialog open={editModalOpen} onClose={() => setEditModalOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={editModalOpen} onClose={() => setEditModalOpen(false)} maxWidth="sm" fullWidth disableRestoreFocus>
         <DialogTitle>{editingId ? 'Edit Document Type' : 'Add Document Type'}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 1 }}>

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { 
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, Button, CircularProgress, Dialog, DialogTitle, 
-  DialogContent, DialogActions, Grid, Divider, Stack, TextField, InputAdornment
+  DialogContent, DialogActions, Grid, Divider, Stack, TextField, InputAdornment,
+  Card
 } from '@mui/material';
 
 // Icons
@@ -19,7 +20,7 @@ import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import api from '../../utils/axios';
 import { useSnackbar } from '../../context/SnackbarContext.jsx';
 
-export default function RequestsQueue() {
+export default function PaymentsQueue() {
   const showSnackbar = useSnackbar();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -194,7 +195,8 @@ export default function RequestsQueue() {
         Verify documents, encode payments, and print certificates from a single unified dashboard.
       </Typography>
 
-      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3 }}>
+      {/* Desktop view */}
+      <TableContainer component={Paper} elevation={3} sx={{ borderRadius: 3, display: { xs: 'none', md: 'block' } }}>
         <Table sx={{ minWidth: 900 }}>
           <TableHead sx={{ bgcolor: '#1e293b' }}>
             <TableRow>
@@ -209,7 +211,7 @@ export default function RequestsQueue() {
           <TableBody>
             {requests.map((row) => (
               <TableRow key={row.request_id} hover>
-                <TableCell fontWeight="bold" color="primary.main">{row.reference_no}</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>{row.reference_no}</TableCell>
                 <TableCell>{row.first_name} {row.last_name}</TableCell>
                 <TableCell>{row.type_name}</TableCell>
                 <TableCell>₱{row.base_fee}</TableCell>
@@ -261,16 +263,94 @@ export default function RequestsQueue() {
         </Table>
       </TableContainer>
 
+      {/* Mobile Card List View */}
+      <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2 }}>
+        {requests.length === 0 ? (
+          <Paper elevation={0} sx={{ p: 4, textAlign: 'center', border: '1px dashed #cbd5e1', bgcolor: 'transparent' }}>
+            <Typography color="text.secondary">No requests found.</Typography>
+          </Paper>
+        ) : (
+          <Stack spacing={2}>
+            {requests.map((row) => (
+              <Card key={row.request_id} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                  <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
+                    {row.reference_no}
+                  </Typography>
+                  <Chip label={row.request_status} color={getStatusColor(row.request_status)} size="small" sx={{ fontWeight: 'bold' }} />
+                </Box>
+                
+                <Typography variant="body1" fontWeight="bold">
+                  {row.first_name} {row.last_name}
+                </Typography>
+                
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Document: {row.type_name}
+                </Typography>
+                
+                <Typography variant="body2" fontWeight="bold" sx={{ mt: 0.5 }}>
+                  Fee: ₱{row.base_fee}
+                </Typography>
+                
+                <Divider sx={{ my: 1.5 }} />
+                
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'flex-end' }}>
+                  {/* ID Verification */}
+                  {row.request_status === 'Pending' && (
+                    <Button variant="contained" color="warning" size="small" onClick={() => handleOpenReview(row)} disabled={!!processingAction} sx={{ borderRadius: 2 }}>
+                      Review
+                    </Button>
+                  )}
+                  
+                  {/* Treasurer Encoding */}
+                  {row.request_status === 'For Payment' && (
+                    <Button variant="contained" color="info" size="small" onClick={() => handleOpenPayment(row)} startIcon={<PaymentsOutlinedIcon />} disabled={!!processingAction} sx={{ borderRadius: 2 }}>
+                      Payment
+                    </Button>
+                  )}
+                  
+                  {/* SECRETARY FULFILLMENT: Print & Mark Ready */}
+                  {row.request_status === 'Processing' && isSecretaryOrAdmin && (
+                    <>
+                      <Button variant="contained" sx={{ bgcolor: '#6366f1', '&:hover': { bgcolor: '#4f46e5' }, borderRadius: 2 }} size="small" onClick={() => handleGeneratePDF(row.request_id, row.reference_no)} startIcon={processingAction === 'print' ? <CircularProgress size={16} color="inherit" /> : <PrintIcon />} disabled={!!processingAction} className={processingAction === 'print' ? 'btn-loading' : ''}>
+                        Print PDF
+                      </Button>
+                      <Button variant="contained" color="primary" size="small" onClick={() => handleMarkReady(row.request_id)} startIcon={processingAction === 'ready' ? <CircularProgress size={16} color="inherit" /> : <TaskAltIcon />} disabled={!!processingAction} className={processingAction === 'ready' ? 'btn-loading' : ''} sx={{ borderRadius: 2 }}>
+                        Mark Ready
+                      </Button>
+                    </>
+                  )}
+
+                  {/* SECRETARY FULFILLMENT: Final Issuance */}
+                  {row.request_status === 'Ready for Pickup' && isSecretaryOrAdmin && (
+                    <Button variant="contained" color="success" size="small" onClick={() => handleIssueDocument(row.request_id)} startIcon={processingAction === 'issue' ? <CircularProgress size={16} color="inherit" /> : <AssignmentTurnedInIcon />} disabled={!!processingAction} className={processingAction === 'issue' ? 'btn-loading' : ''} sx={{ borderRadius: 2 }}>
+                      Issue Document
+                    </Button>
+                  )}
+
+                  {/* Universal View Button */}
+                  {['Processing', 'Ready for Pickup', 'Issued', 'Rejected'].includes(row.request_status) && (
+                    <Button variant="outlined" size="small" onClick={() => handleOpenReview(row)} startIcon={<VisibilityIcon />} sx={{ borderRadius: 2 }}>
+                      View Details
+                    </Button>
+                  )}
+                </Box>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
+
       {/* 1. THE VERIFICATION & REVIEW MODAL */}
-      <Dialog open={reviewModalOpen} onClose={handleCloseAll} maxWidth="lg" fullWidth>
+      <Dialog open={reviewModalOpen} onClose={handleCloseAll} maxWidth="lg" fullWidth disableRestoreFocus>
         {selectedReq && (
           <>
             <DialogTitle sx={{ bgcolor: 'primary.main', color: 'white' }}>
               <InfoOutlinedIcon sx={{ mr: 1, verticalAlign: 'middle' }}/> Reviewing: {selectedReq.reference_no}
             </DialogTitle>
             <DialogContent dividers sx={{ p: 0 }}>
-              <Grid container sx={{ height: '70vh' }}>
-                <Grid item xs={12} md={4} sx={{ p: 3, borderRight: '1px solid #ddd', overflowY: 'auto' }}>
+              <Grid container sx={{ height: { xs: 'auto', md: '70vh' } }}>
+                <Grid item xs={12} md={4} sx={{ p: 3, borderRight: { xs: 'none', md: '1px solid #ddd' }, borderBottom: { xs: '1px solid #ddd', md: 'none' }, overflowY: { xs: 'visible', md: 'auto' } }}>
                   
                   <Typography variant="subtitle2" color="text.secondary">RESIDENT PROFILE</Typography>
                   <Typography variant="h6" fontWeight="bold">{selectedReq.first_name} {selectedReq.last_name}</Typography>
@@ -301,10 +381,10 @@ export default function RequestsQueue() {
                   </Stack>
                 </Grid>
 
-                <Grid item xs={12} md={8} sx={{ bgcolor: '#2c3e50', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Grid item xs={12} md={8} sx={{ bgcolor: '#2c3e50', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: { xs: '300px', md: 'auto' }, p: 2 }}>
                   {!previewUrl ? <Typography color="#95a5a6">Select a document to preview</Typography> : 
-                   previewType === 'image' ? <img src={previewUrl} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : 
-                   <iframe src={previewUrl} width="100%" height="100%" style={{ border: 'none' }} />}
+                   previewType === 'image' ? <img src={previewUrl} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Preview" /> : 
+                   <iframe src={previewUrl} width="100%" height="100%" style={{ border: 'none' }} title="PDF Preview" />}
                 </Grid>
               </Grid>
             </DialogContent>
@@ -331,7 +411,7 @@ export default function RequestsQueue() {
       </Dialog>
 
       {/* 2. THE REJECTION SUB-MODAL */}
-      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)}>
+      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} disableRestoreFocus>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Reason for Rejection</DialogTitle>
         <DialogContent dividers>
           <TextField fullWidth multiline rows={3} placeholder="Please provide the exact reason for rejecting this document..." value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} />
@@ -343,7 +423,7 @@ export default function RequestsQueue() {
       </Dialog>
 
       {/* 3. THE PAYMENT & CHANGE ENCODING MODAL (Code Unchanged) */}
-      <Dialog open={paymentModalOpen} onClose={handleCloseAll} maxWidth="xs" fullWidth>
+      <Dialog open={paymentModalOpen} onClose={handleCloseAll} maxWidth="xs" fullWidth disableRestoreFocus>
         {selectedReq && (
           <>
             <DialogTitle sx={{ bgcolor: 'success.main', color: 'white', fontWeight: 'bold' }}>

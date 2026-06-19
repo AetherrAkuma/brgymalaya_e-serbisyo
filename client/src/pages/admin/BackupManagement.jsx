@@ -139,7 +139,7 @@ export default function BackupManagement() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2} sx={{ mb: 4 }}>
         <Typography variant="h4" fontWeight="bold">Backup & System Recovery</Typography>
         <Button 
           variant="contained" 
@@ -147,7 +147,7 @@ export default function BackupManagement() {
           onClick={handleCreateBackup}
           disabled={actionLoading || loading}
           className={actionLoading ? 'btn-loading' : ''}
-          sx={{ py: 1.2, px: 3, fontWeight: 'bold', borderRadius: 2 }}
+          sx={{ py: 1.2, px: 3, fontWeight: 'bold', borderRadius: 2, width: { xs: '100%', sm: 'auto' } }}
         >
           {actionLoading ? 'Creating...' : 'Create New Backup'}
         </Button>
@@ -193,8 +193,8 @@ export default function BackupManagement() {
       </Grid>
 
       {/* --- BACKUP FILES TABLE --- */}
-      <Paper sx={{ width: '100%', borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', overflow: 'hidden' }}>
-        <TableContainer>
+      <Paper sx={{ width: '100%', borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', overflow: 'hidden', display: { xs: 'none', md: 'block' } }}>
+        <TableContainer sx={{ overflowX: 'auto' }}>
           <Table>
             <TableHead sx={{ bgcolor: '#f8fafc' }}>
               <TableRow>
@@ -261,6 +261,70 @@ export default function BackupManagement() {
           </Table>
         </TableContainer>
       </Paper>
+
+      {/* Mobile Card List View */}
+      <Box sx={{ display: { xs: 'block', md: 'none' }, mt: 2 }}>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+            <CircularProgress />
+          </Box>
+        ) : backups.length === 0 ? (
+          <Paper elevation={0} sx={{ p: 4, textAlign: 'center', border: '1px dashed #cbd5e1', bgcolor: 'transparent' }}>
+            <Typography color="text.secondary">No system backup files found.</Typography>
+          </Paper>
+        ) : (
+          <Stack spacing={2}>
+            {backups.map((row) => (
+              <Card key={row.filename} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
+                <Typography variant="subtitle2" sx={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'primary.main', mb: 1, wordBreak: 'break-all' }}>
+                  {row.filename}
+                </Typography>
+                
+                <Typography variant="body2" color="text.secondary">
+                  Created: {new Date(row.createdAt).toLocaleString()}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Size: {formatBytes(row.size)}
+                </Typography>
+
+                <Divider sx={{ my: 1.5 }} />
+
+                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  <Button 
+                    size="small"
+                    variant="outlined" 
+                    startIcon={<CloudDownloadIcon />} 
+                    onClick={() => handleDownload(row.filename)}
+                    disabled={actionLoading}
+                    sx={{ fontSize: '0.7rem' }}
+                  >
+                    Download
+                  </Button>
+                  <Button 
+                    size="small"
+                    variant="outlined" 
+                    color="warning"
+                    startIcon={<RestoreIcon />} 
+                    onClick={() => handleRestoreClick(row)}
+                    disabled={actionLoading}
+                    sx={{ fontSize: '0.7rem' }}
+                  >
+                    Restore
+                  </Button>
+                  <IconButton 
+                    color="error" 
+                    onClick={() => handleDeleteClick(row)}
+                    disabled={actionLoading}
+                    size="small"
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              </Card>
+            ))}
+          </Stack>
+        )}
+      </Box>
 
       {/* --- CONFIRM RESTORE DIALOG --- */}
       <Dialog open={openRestoreDialog} onClose={() => setOpenRestoreDialog(false)}>
