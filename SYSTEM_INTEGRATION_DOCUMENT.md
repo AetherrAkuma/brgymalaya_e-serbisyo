@@ -10,8 +10,8 @@ This document provides complete instructions for developers and administrators t
 3. [Environment Configuration & Setup](#-environment-configuration--setup)
 4. [Verification & Manual Test Procedures](#-verification--manual-test-procedures)
 5. [Developer Customization Guide (Emails & Backups)](#-developer-customization-guide-emails--backups)
-6. [Technitium Split-Horizon DNS & Local SSL Proxy Setup](#-technitium-split-horizon-dns--local-ssl-proxy-setup)
-7. [Clustered Load Balancing Setup (Caddy & PM2)](#-clustered-load-balancing-setup-caddy--pm2)
+6. [Technitium Split-Horizon DNS Setup](#-technitium-split-horizon-dns-setup)
+7. [Cloudflare Tunnel Setup (Public HTTPS Access)](#-cloudflare-tunnel-setup-public-https-access)
 
 ---
 
@@ -168,16 +168,16 @@ cron.schedule('0 0 * * *', async () => {
 
 ---
 
-## 🌐 Technitium Split-Horizon DNS & Local SSL Proxy Setup
+## 🌐 Technitium Split-Horizon DNS Setup
 
-This section details how to configure local DNS resolution and direct local HTTPS requests inside the Barangay Hall Local Area Network (LAN) using **Technitium DNS Server** and **Caddy Server** as a reverse proxy.
+This section details how to configure local DNS resolution inside the Barangay Hall Local Area Network (LAN) using **Technitium DNS Server**.
 
 ### 📋 Architectural Overview
 When a device connects to the Barangay Hall Wi-Fi or Ethernet switches:
 1. It queries **Technitium DNS** for `portal.brgy143.gov.ph`.
 2. Technitium DNS resolves it directly to the local server's private IP (`192.168.1.100`) rather than querying public root servers.
-3. The client browser connects to the private IP over HTTPS (ports 443/8443).
-4. **Caddy Server** intercept the request, validates the certificate, and reverse proxies it to the local Express backend (port 3000) or Vite client (port 5173).
+3. The client browser connects to the private IP over HTTP.
+4. The Express backend (port 3000) and Vite frontend (port 5173) serve the application directly.
 
 ---
 
@@ -201,38 +201,22 @@ Once physically at the Barangay Hall:
 
 ---
 
-### 🔒 Step 2: Local SSL Reverse Proxy (Caddy) Setup
-Since browser camera access (required for scanning certificate QR codes) is restricted on non-secure connections, the local domain must run over HTTPS. **Caddy** handles local certificates and reverse proxying automatically.
+### 🔒 Step 2: Access Methods
 
-1. **Install Caddy** on the local server machine:
-   * Download the executable from the [Caddy Website](https://caddyserver.com/download).
-   * Or install via Chocolatey: `choco install caddy`
-2. Create a file named `Caddyfile` (no extension) in your Caddy installation folder (or in the root folder of your project for easy management):
-   ```caddyfile
-   portal.brgy143.gov.ph {
-       # Reverse proxy to the Vite client server
-       reverse_proxy localhost:5173
-       
-       # Generate and trust certificates using Caddy's internal local CA
-       tls internal
-   }
+Since the system is served over HTTP locally, here are your options for HTTPS (required for camera/QR scanning):
 
-   api.brgy143.gov.ph {
-       # Reverse proxy to the Express API server
-       reverse_proxy localhost:3000
-       
-       # Generate and trust certificates using Caddy's internal local CA
-       tls internal
-   }
-   ```
-3. Run Caddy in your terminal:
-   ```bash
-   caddy run --config ./Caddyfile
-   ```
-4. **Trust the Local Certificate**:
-   * When Caddy runs with `tls internal`, it establishes its own root Certificate Authority (CA) on the server.
-   * On the server host machine, Caddy will try to install this root CA into the local system store automatically.
-   * To allow other devices (staff laptops/smartphones) on the LAN to trust the HTTPS certificate without warnings, copy Caddy's root certificate (located at `%APPDATA%\caddy\pki\authorities\local\root.crt` on Windows) and install/trust it on those devices' certificate managers.
+#### Option A: Local Machine Access
+Open `http://localhost:5173` directly on the server PC. `localhost` is considered a secure context by browsers, so camera access will work.
+
+#### Option B: LAN Access via Cloudflare Quick Tunnel
+Run the tunnel (see Section 7) and access the system via the generated `https://*.trycloudflare.com` URL from any LAN device.
+
+#### Option C: LAN Access via Self-Signed Certificate (Advanced)
+If you prefer local HTTPS without a public tunnel, use `mkcert`:
+1. Install mkcert from [https://github.com/FiloSottile/mkcert](https://github.com/FiloSottile/mkcert)
+2. Run: `mkcert -install`
+3. Generate certs: `mkcert portal.brgy143.gov.ph api.brgy143.gov.ph localhost`
+4. Configure your reverse proxy (or Express/Vite) to use the generated `.pem` files.
 
 ---
 
@@ -246,150 +230,67 @@ To ensure all devices on the Barangay network automatically query your Technitiu
 
 ---
 
-## ⚖️ Clustered Load Balancing Setup (Caddy & PM2)
+## 🌐 Cloudflare Tunnel Setup (Public HTTPS Access)
 
-This section provides configuration instructions for load balancing multiple Express backend processes on a single server host. This utilizes all available CPU cores, maximizes system throughput, and protects against downtime.
+This section covers exposing your local E-Serbisyo system to the internet (or LAN devices) using **Cloudflare Tunnel (Quick Tunnel)** — no domain or account required.
 
 ### 📋 Architectural Overview
-1. **PM2** manages multiple instances of the Express app (`server.js`) on ports `3000` and `3001`.
-2. **Caddy** intercepts public/local traffic and balances requests across active instances using a Round Robin policy.
-3. If one instance crashes or is taken down for database maintenance, Caddy transparently shifts traffic to the other instance.
+1. **Cloudflared** establishes a secure outbound tunnel from your server to Cloudflare's edge.
+2. Cloudflare provides a public HTTPS URL (`https://<random>.trycloudflare.com`).
+3. The tunnel forwards requests to your local backend (port 3000) and frontend (port 5173).
 
 ---
 
-### 📦 Step 1: Process Management (PM2 Setup)
-PM2 ensures your Node backend instances run continuously and restart automatically on system crashes.
+### 📦 Step 1: Install Cloudflared
+If not already installed:
+```powershell
+winget install --id Cloudflare.cloudflared
+```
+Or download the MSI from [github.com/cloudflare/cloudflared/releases](https://github.com/cloudflare/cloudflared/releases).
 
-1. Install PM2 globally on the host machine:
-   ```bash
-   npm install -g pm2
-   ```
-2. Save this configurations as `ecosystem.config.js` in the `server` folder:
-   ```javascript
-   module.exports = {
-     apps: [
-       {
-         name: "eserbisyo-backend-3000",
-         script: "./server.js",
-         env: {
-           PORT: "3000",
-           RUN_CRON: "true" // Only Port 3000 runs the daily midnight backup job
-         }
-       },
-       {
-         name: "eserbisyo-backend-3001",
-         script: "./server.js",
-         env: {
-           PORT: "3001",
-           RUN_CRON: "false" // Disabled on Port 3001 to prevent concurrent file locks
-         }
-       }
-     ]
-   }
-   ```
-3. Start the application:
-   ```bash
-   pm2 start ecosystem.config.js
-   ```
-4. Save the configuration to restore on system startup:
-   ```bash
-   pm2 save
-   pm2 startup
-   ```
+> After installation, if `cloudflared` is not recognized in your terminal, add `C:\Program Files (x86)\cloudflared` to your system PATH or use the full path: `"C:\Program Files (x86)\cloudflared\cloudflared.exe"`.
 
 ---
 
-### 🔒 Step 2: SSL/TLS & Load Balancing (Caddyfile Configurations)
+### 🚀 Step 2: Start the System with Tunnel
+Simply double-click **[start-system.bat](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.bat)** at the project root.
 
-Depending on your current staging or deployment environment, select the appropriate `Caddyfile` configuration:
+This will:
+1. Start the backend (port 3000)
+2. Start the Vite frontend (port 5173)
+3. Launch two Cloudflare Quick Tunnels — one for the API, one for the frontend
+4. Detect the generated tunnel URLs
+5. Automatically update `.env` files with the new public URLs
+6. Display the access URLs in the console
 
-#### Option A: Local Domain Setup (Staging at Barangay Hall)
-Uses **`tls internal`** to let Caddy act as a local Certificate Authority, issuing self-signed certificates for your fake/local domains:
-```caddyfile
-portal.brgy143.gov.ph {
-    reverse_proxy 127.0.0.1:5173
-    tls internal
-}
-
-api.brgy143.gov.ph {
-    reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
-        lb_policy round_robin
-        health_uri /api/v1/health
-        health_interval 5s
-        health_timeout 2s
-    }
-    tls internal
-}
-```
-
-#### Option B: Public Staging (Zero-Touch Let's Encrypt / ZeroSSL)
-If your server is directly exposed to the internet and matches a registered public domain name, Caddy **automatically requests and renews** valid public certificates:
-```caddyfile
-portal.mybarangay.com {
-    reverse_proxy 127.0.0.1:5173
-}
-
-api.mybarangay.com {
-    reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
-        lb_policy round_robin
-        health_uri /api/v1/health
-        health_interval 5s
-        health_timeout 2s
-    }
-}
-```
+> **Note:** Tunnel URLs change every time you restart. The script handles this automatically.
 
 ---
 
-### 🧪 Step 3: 1-Click Local Offline Simulation
-If you are working offline without router DNS setups, use the pre-configured **[start-system.bat](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.bat)** at the project root.
-
-This launcher runs standard HTTP on ports `8080` and `8081` to bypass DNS validation:
-
-#### Caddyfile configuration for Local HTTP Offline Testing:
-```caddyfile
-:8080 {
-    reverse_proxy 127.0.0.1:5173
-}
-
-:8081 {
-    reverse_proxy 127.0.0.1:3000 127.0.0.1:3001 {
-        lb_policy round_robin
-        health_uri /api/v1/health
-        health_interval 5s
-        health_timeout 2s
-    }
-}
+### 🖐️ Step 3: Manual Tunnel (One Service at a Time)
+If you only need to expose the backend (for API calls):
+```powershell
+cd server
+npm run tunnel
 ```
-
-#### Running the offline test:
-1. Double-click the **[start-system.bat](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/start-system.bat)** file.
-2. Navigate to `http://localhost:8080` on your browser to load the dashboard.
-3. Refresh `http://localhost:8081/api/v1/health` and verify load balancing in the console logs.
-4. Close the window or run `Stop-Process -Name node,caddy -Force` in PowerShell to clean up.
 
 ---
 
 ### 🌐 Step 4: Environment Variables Matrix
 Ensure your frontend and backend configuration variables match your deployment mode:
 
-| Deployment Mode | Client Base API URL (`client/.env`) | Server Verification URL (`server/.env`) | Caddy Configuration |
-| :--- | :--- | :--- | :--- |
-| **Local Offline Test** | `http://localhost:8081/api/v1` | `http://localhost:8080/verify` | Wildcard ports (`:8080` / `:8081`) |
-| **Local Staging (LAN Domain)** | `https://api.brgy143.gov.ph/api/v1` | `https://portal.brgy143.gov.ph/verify` | Domains with `tls internal` |
-| **Cloudflare Tunnel** | `https://api.brgy143.gov.ph/api/v1` | `https://portal.brgy143.gov.ph/verify` | Cloudflare ingress routes |
+| Deployment Mode | Client Base API URL (`client/.env`) | Server Verification URL (`server/.env`) |
+| :--- | :--- | :--- |
+| **Local (Server PC)** | `http://localhost:3000/api/v1` | `http://localhost:5173/verify` |
+| **LAN / Public (Tunnel)** | Auto-updated by `start-system.ps1` | Auto-updated by `start-system.ps1` |
 
 ---
 
-### 🔑 Step 5: Trusting Local Certificates on Other LAN Devices
-When using Caddy's `tls internal` mode on LAN, Caddy installs its root CA automatically on the host computer. For other devices (like smartphones or staff laptops) to trust the SSL connection and allow webcam access:
-1. Navigate to `%APPDATA%\caddy\pki\authorities\local\` on the host server.
-2. Copy the file **`root.crt`** (Caddy's Root Certificate Authority).
-3. Transfer this file to your test device.
-4. **Install root certificate**:
-   * **Windows/macOS**: Double-click `root.crt` and install it into your system's "Trusted Root Certification Authorities" store.
-   * **Android**: Go to Settings -> Security -> Encryption & Credentials -> Install a Certificate -> CA Certificate, and select `root.crt`.
-   * **iOS**: Send it via AirDrop/Email, download the profile in Settings, then go to Settings -> General -> About -> Certificate Trust Settings and enable Full Trust for Caddy CA.
+### 🔑 Step 5: Access from Other LAN Devices
+1. Run the system using `start-system.bat`.
+2. Wait for the tunnel URLs to appear in the console.
+3. From any device on the same network (or anywhere in the world), open the **Public Portal** URL.
+4. The tunnel URL is HTTPS, so camera/QR scanning works on all devices.
 
 
 

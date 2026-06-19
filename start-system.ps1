@@ -1,139 +1,128 @@
-# E-Serbisyo Clustered Environment Controller
-# Run this script to start all services (API Node instances, Vite Frontend, and Caddy Proxy) 
-# and verify their status automatically.
-
 $ErrorActionPreference = "SilentlyContinue"
-
-# Define local configurations
-$caddyUrl = "https://caddyserver.com/api/download?os=windows&arch=amd64"
-$caddyExe = "caddy.exe"
-$caddyfile = "Caddyfile"
 
 Clear-Host
 Write-Host "====================================================" -ForegroundColor Cyan
-Write-Host "   E-SERBISYO CLUSTERED ENVIRONMENT CONTROLLER" -ForegroundColor Cyan
+Write-Host "   E-SERBISYO SYSTEM START (Cloudflare Tunnel)" -ForegroundColor Cyan
 Write-Host "====================================================" -ForegroundColor Cyan
 
-# 1. Download Caddy if missing
-if (-not (Test-Path $caddyExe)) {
-    Write-Host "[*] Caddy executable not found in root. Downloading..." -ForegroundColor Yellow
-    curl.exe -L -o $caddyExe $caddyUrl
-    if (Test-Path $caddyExe) {
-        Write-Host "[+] Caddy downloaded successfully!" -ForegroundColor Green
-    } else {
-        Write-Host "[-] Failed to download Caddy. Please check internet connection." -ForegroundColor Red
-        Exit
-    }
-}
-
-# 2. Check if Caddyfile exists
-if (-not (Test-Path $caddyfile)) {
-    Write-Host "[-] Caddyfile not found in root. Please create it first." -ForegroundColor Red
-    Exit
-}
-
-# 3. Clean up any existing instances from previous runs to prevent port conflicts
-Write-Host "[*] Stopping any existing Node or Caddy processes to prevent conflicts..." -ForegroundColor Gray
+# 1. Clean up any existing processes
+Write-Host "[*] Stopping any existing Node or cloudflared processes..." -ForegroundColor Gray
 Stop-Process -Name "node" -Force 2>$null
-Stop-Process -Name "caddy" -Force 2>$null
+Stop-Process -Name "cloudflared" -Force 2>$null
 Start-Sleep -Seconds 1
 
-# 4. Launch Backend Instance A (Port 3000, Cron Enabled)
-Write-Host "[*] Starting Backend Instance A (Port 3000, cron: active)..." -ForegroundColor Gray
+# 2. Start Backend (Port 3000)
+Write-Host "[*] Starting Backend (Port 3000)..." -ForegroundColor Gray
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle='Express API - Port 3000'; `$env:PORT='3000'; `$env:RUN_CRON='true'; node server.js" -WorkingDirectory "server" -WindowStyle Minimized
 
-# 5. Launch Backend Instance B (Port 3001, Cron Disabled)
-Write-Host "[*] Starting Backend Instance B (Port 3001, cron: inactive)..." -ForegroundColor Gray
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle='Express API - Port 3001'; `$env:PORT='3001'; `$env:RUN_CRON='false'; node server.js" -WorkingDirectory "server" -WindowStyle Minimized
-
-# 6. Launch Vite Client (Port 5173)
-Write-Host "[*] Starting Vite Client Frontend (Port 5173)..." -ForegroundColor Gray
+# 3. Start Vite Frontend (Port 5173)
+Write-Host "[*] Starting Vite Frontend (Port 5173)..." -ForegroundColor Gray
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle='Vite Client'; npm run dev" -WorkingDirectory "client" -WindowStyle Minimized
 
-# 7. Launch Caddy Reverse Proxy & Load Balancer
-Write-Host "[*] Starting Caddy Proxy Load Balancer..." -ForegroundColor Gray
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle='Caddy Proxy'; .\caddy.exe run --config ./Caddyfile" -WorkingDirectory "." -WindowStyle Minimized
-
-# 8. Wait for initialization
+# Wait for servers to initialize
 Write-Host ""
-Write-Host "Waiting 8 seconds for database and servers to initialize..." -ForegroundColor Yellow
+Write-Host "Waiting 8 seconds for servers to initialize..." -ForegroundColor Yellow
 for ($i = 8; $i -gt 0; $i--) {
     Write-Host "$i..." -NoNewline
     Start-Sleep -Seconds 1
 }
-Write-Host "Starting health probes..."
 
-# 9. Perform HTTP Health Probes
-$statusBackend3000 = "OFFLINE"
-$statusBackend3001 = "OFFLINE"
-$statusCaddyLB = "OFFLINE"
-$statusCaddyPortal = "OFFLINE"
+# 4. Start Cloudflare Quick Tunnel for Backend
+Write-Host ""
+Write-Host "[*] Starting Cloudflare Tunnel for Backend (port 3000)..." -ForegroundColor Gray
+$backendTunnelLog = "$env:TEMP\cloudflared-backend.log"
+Remove-Item -Path $backendTunnelLog -Force -ErrorAction SilentlyContinue
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "& 'C:\Program Files (x86)\cloudflared\cloudflared.exe' tunnel --url http://127.0.0.1:3000 --loglevel info 2>&1 | Tee-Object -FilePath '$backendTunnelLog'" -WindowStyle Minimized
 
+# 5. Start Cloudflare Quick Tunnel for Frontend
+Write-Host "[*] Starting Cloudflare Tunnel for Frontend (port 5173)..." -ForegroundColor Gray
+$frontendTunnelLog = "$env:TEMP\cloudflared-frontend.log"
+Remove-Item -Path $frontendTunnelLog -Force -ErrorAction SilentlyContinue
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "& 'C:\Program Files (x86)\cloudflared\cloudflared.exe' tunnel --url http://127.0.0.1:5173 --loglevel info 2>&1 | Tee-Object -FilePath '$frontendTunnelLog'" -WindowStyle Minimized
+
+# 6. Poll logs until tunnel URLs appear (up to 90 seconds)
+Write-Host "Waiting for tunnels to connect (may take up to 90s)..." -ForegroundColor Yellow
+
+$backendUrl = $null
+$frontendUrl = $null
+$maxWait = 90
+for ($i = 0; $i -lt $maxWait; $i++) {
+    if (-not $backendUrl -and (Test-Path $backendTunnelLog)) {
+        $logContent = Get-Content $backendTunnelLog -Raw
+        if ($logContent -match 'https://([\w-]+\.trycloudflare\.com)') {
+            $backendUrl = $matches[0]
+            Write-Host ""; Write-Host "[+] Backend Tunnel URL: $backendUrl" -ForegroundColor Green
+        }
+    }
+    if (-not $frontendUrl -and (Test-Path $frontendTunnelLog)) {
+        $logContent = Get-Content $frontendTunnelLog -Raw
+        if ($logContent -match 'https://([\w-]+\.trycloudflare\.com)') {
+            $frontendUrl = $matches[0]
+            Write-Host ""; Write-Host "[+] Frontend Tunnel URL: $frontendUrl" -ForegroundColor Green
+        }
+    }
+    if ($backendUrl -and $frontendUrl) { break }
+    Write-Host "." -NoNewline
+    Start-Sleep -Seconds 1
+}
+Write-Host ""
+
+# 7. Update .env files with tunnel URLs if found
+$clientEnv = "client\.env"
+$serverEnv = "server\.env"
+
+if ($backendUrl) {
+    # Strip trailing slash if present
+    $backendUrl = $backendUrl.TrimEnd('/')
+    $newApiUrl = "$backendUrl/api/v1"
+    (Get-Content $clientEnv) -replace 'VITE_API_BASE_URL=.*', "VITE_API_BASE_URL=$newApiUrl" | Set-Content $clientEnv
+    Write-Host "[+] Updated client\.env VITE_API_BASE_URL = $newApiUrl" -ForegroundColor Green
+} else {
+    Write-Host "[-] Could not detect Backend Tunnel URL. Check logs: $backendTunnelLog" -ForegroundColor Red
+}
+
+if ($frontendUrl) {
+    $frontendUrl = $frontendUrl.TrimEnd('/')
+    $newVerifyUrl = "$frontendUrl/verify"
+    (Get-Content $serverEnv) -replace 'VERIFICATION_BASE_URL=.*', "VERIFICATION_BASE_URL=$newVerifyUrl" | Set-Content $serverEnv
+    Write-Host "[+] Updated server\.env VERIFICATION_BASE_URL = $newVerifyUrl" -ForegroundColor Green
+} else {
+    Write-Host "[-] Could not detect Frontend Tunnel URL. Check logs: $frontendTunnelLog" -ForegroundColor Red
+}
+
+# 8. Perform Health Check (via localhost)
+$statusBackend = "OFFLINE"
 try {
     $res = Invoke-RestMethod -Uri "http://127.0.0.1:3000/api/v1/health" -Method Get -TimeoutSec 3
-    if ($res.status -eq "OK") { $statusBackend3000 = "ONLINE (Cron Active)" }
+    if ($res.status -eq "OK") { $statusBackend = "ONLINE" }
 } catch {}
 
-try {
-    $res = Invoke-RestMethod -Uri "http://127.0.0.1:3001/api/v1/health" -Method Get -TimeoutSec 3
-    if ($res.status -eq "OK") { $statusBackend3001 = "ONLINE (Cron Disabled)" }
-} catch {}
-
-try {
-    $res = Invoke-RestMethod -Uri "http://127.0.0.1:8081/api/v1/health" -Method Get -TimeoutSec 3
-    if ($res.status -eq "OK") { $statusCaddyLB = "ONLINE (Load Balanced)" }
-} catch {}
-
-try {
-    $res = Invoke-WebRequest -Uri "http://127.0.0.1:8080" -Method Get -TimeoutSec 3 -UseBasicParsing
-    if ($res.StatusCode -eq 200) { $statusCaddyPortal = "ONLINE" }
-} catch {}
-
-# 10. Display Status Dashboard
+# 9. Display Dashboard
 Write-Host ""
 Write-Host "====================================================" -ForegroundColor Cyan
 Write-Host "              SERVICES HEALTH STATUS" -ForegroundColor Cyan
 Write-Host "====================================================" -ForegroundColor Cyan
 
-# Service 1
-if ($statusBackend3000 -like "ONLINE*") {
-    Write-Host "[PASS] Node Backend A (Port 3000): " -NoNewline -ForegroundColor Green
-    Write-Host $statusBackend3000 -ForegroundColor Green
+if ($statusBackend -eq "ONLINE") {
+    Write-Host "[PASS] Backend (Port 3000): " -NoNewline -ForegroundColor Green
+    Write-Host $statusBackend -ForegroundColor Green
 } else {
-    Write-Host "[FAIL] Node Backend A (Port 3000): " -NoNewline -ForegroundColor Red
-    Write-Host $statusBackend3000 -ForegroundColor Red
+    Write-Host "[FAIL] Backend (Port 3000): " -NoNewline -ForegroundColor Red
+    Write-Host $statusBackend -ForegroundColor Red
 }
 
-# Service 2
-if ($statusBackend3001 -like "ONLINE*") {
-    Write-Host "[PASS] Node Backend B (Port 3001): " -NoNewline -ForegroundColor Green
-    Write-Host $statusBackend3001 -ForegroundColor Green
-} else {
-    Write-Host "[FAIL] Node Backend B (Port 3001): " -NoNewline -ForegroundColor Red
-    Write-Host $statusBackend3001 -ForegroundColor Red
-}
-
-# Service 3
-if ($statusCaddyLB -eq "ONLINE (Load Balanced)") {
-    Write-Host "[PASS] Caddy LB Endpoint (Port 8081): " -NoNewline -ForegroundColor Green
-    Write-Host $statusCaddyLB -ForegroundColor Green
-} else {
-    Write-Host "[FAIL] Caddy LB Endpoint (Port 8081): " -NoNewline -ForegroundColor Red
-    Write-Host $statusCaddyLB -ForegroundColor Red
-}
-
-# Service 4
-if ($statusCaddyPortal -eq "ONLINE") {
-    Write-Host "[PASS] Caddy Portal Proxy (Port 8080): " -NoNewline -ForegroundColor Green
-    Write-Host $statusCaddyPortal -ForegroundColor Green
-} else {
-    Write-Host "[FAIL] Caddy Portal Proxy (Port 8080): " -NoNewline -ForegroundColor Red
-    Write-Host $statusCaddyPortal -ForegroundColor Red
-}
-
+Write-Host ""
 Write-Host "====================================================" -ForegroundColor Cyan
-Write-Host "Access Client Portal: http://localhost:8080" -ForegroundColor White
-Write-Host "Access API Gateway  : http://localhost:8081" -ForegroundColor White
-Write-Host "To shut down all services, close the minimized windows or run: " -ForegroundColor Gray
-Write-Host "Stop-Process -Name node,caddy -Force" -ForegroundColor Yellow
+Write-Host "ACCESS INFORMATION" -ForegroundColor Cyan
 Write-Host "====================================================" -ForegroundColor Cyan
+Write-Host "Local Backend  : http://localhost:3000" -ForegroundColor White
+Write-Host "Local Frontend : http://localhost:5173" -ForegroundColor White
+if ($backendUrl) { Write-Host "Public API     : $backendUrl" -ForegroundColor Yellow }
+if ($frontendUrl) { Write-Host "Public Portal  : $frontendUrl" -ForegroundColor Yellow }
+Write-Host "====================================================" -ForegroundColor Cyan
+Write-Host "To shut down all services, close the minimized windows" -ForegroundColor Gray
+Write-Host "or run: Stop-Process -Name node,cloudflared -Force" -ForegroundColor Yellow
+Write-Host "====================================================" -ForegroundColor Cyan
+
+# Keep script alive
+Read-Host "Press Enter to exit"

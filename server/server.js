@@ -19,6 +19,15 @@ const { generateBarangayPDF } = require('./utils/pdfGenerator');
 // Phase 8 Audit Logger
 const { logAction, logLogin, logStatusChange, logDocumentPrint, logPayment } = require('./utils/auditLogger');
 const { sendEmail } = require('./utils/emailSender');
+const {
+    generalLimiter,
+    authLimiter,
+    registerLimiter,
+    passwordResetLimiter,
+    requestCreationLimiter,
+    fileUploadLimiter,
+    adminLimiter
+} = require('./middleware/rateLimiter');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -41,12 +50,17 @@ app.use((err, req, res, next) => {
     next();
 });
 
+app.use(generalLimiter);
 app.use(sqlSanitizer);
+
+// Prefix rate limiters for administrative API groups
+app.use('/api/v1/admin', verifyJWT, adminLimiter);
+app.use('/api/v1/payments', verifyJWT, adminLimiter);
 
 // ==========================================
 // PHASE 1.1: DATABASE ENDPOINTS
 // ==========================================
-app.post('/api/v1/setup/database', async (req, res) => {
+app.post('/api/v1/setup/database', registerLimiter, async (req, res) => {
     try {
         const sqlPath = path.join(__dirname, 'schema.sql');
         const sqlQuery = fs.readFileSync(sqlPath, 'utf8');
@@ -74,7 +88,7 @@ app.get('/api/v1/health/db', async (req, res) => {
 // ==========================================
 // PHASE 1.2 & 1.3: CRYPTO & AUTH TESTING
 // ==========================================
-app.post('/api/v1/test/crypto', (req, res) => {
+app.post('/api/v1/test/crypto', registerLimiter, (req, res) => {
     try {
         const { password, sensitive_data } = req.body;
         res.status(200).json({
@@ -86,7 +100,7 @@ app.post('/api/v1/test/crypto', (req, res) => {
     }
 });
 
-app.post('/api/v1/test/generate-token', (req, res) => {
+app.post('/api/v1/test/generate-token', registerLimiter, (req, res) => {
     const { id, role, username } = req.body;
     res.status(200).json({ token: generateToken({ id, role, username }) });
 });
@@ -96,7 +110,7 @@ app.get('/api/v1/test/super-admin-only', verifyJWT, roleGuard(['Captain']), (req
 });
 
 // Developer SMTP Test Endpoint
-app.post('/api/v1/test/send-email', async (req, res) => {
+app.post('/api/v1/test/send-email', registerLimiter, async (req, res) => {
     try {
         const { to } = req.body;
         if (!to) return res.status(400).json({ error: 'Recipient email "to" is required.' });
@@ -116,7 +130,7 @@ app.post('/api/v1/test/send-email', async (req, res) => {
 });
 
 // Developer QR Verification Seed Endpoint
-app.post('/api/v1/test/qr-seed', async (req, res) => {
+app.post('/api/v1/test/qr-seed', registerLimiter, async (req, res) => {
     try {
         const QRCode = require('qrcode');
         const testHash = "verify_test_cryptographic_hash_999";
@@ -185,7 +199,7 @@ app.post('/api/v1/test/qr-seed', async (req, res) => {
 // ==========================================
 // PHASE 1.4: SECURE FILE HANDLING
 // ==========================================
-app.post('/api/v1/files/upload', express.raw({ type: ['image/jpeg', 'image/png', 'application/pdf', 'application/octet-stream'], limit: '5mb' }), (req, res) => {
+app.post('/api/v1/files/upload', fileUploadLimiter, express.raw({ type: ['image/jpeg', 'image/png', 'application/pdf', 'application/octet-stream'], limit: '5mb' }), (req, res) => {
     try {
         if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
             return res.status(400).json({ error: 'No file uploaded. Ensure you are sending raw binary data and the correct Content-Type.' });
@@ -208,7 +222,7 @@ app.post('/api/v1/files/upload', express.raw({ type: ['image/jpeg', 'image/png',
     }
 });
 
-app.get('/api/v1/files/:filename', verifyJWT, roleGuard(['Captain', 'Secretary', 'Treasurer', 'Captain']), (req, res) => {
+app.get('/api/v1/files/:filename', verifyJWT, roleGuard(['Captain', 'Secretary', 'Treasurer', 'Captain']), fileUploadLimiter, (req, res) => {
     try {
         const decryptedBuffer = decryptFileBuffer(req.params.filename);
         let mimeType = 'application/octet-stream';
@@ -227,7 +241,7 @@ app.get('/api/v1/files/:filename', verifyJWT, roleGuard(['Captain', 'Secretary',
 // PHASE 2: IDENTITY & ACCOUNT MANAGEMENT
 // ==========================================
 
-app.post('/api/v1/auth/resident/register', upload.single('id_proof_image'), async (req, res) => {
+app.post('/api/v1/auth/resident/register', registerLimiter, upload.single('id_proof_image'), async (req, res) => {
     try {
         const {
             first_name, middle_name, last_name, date_of_birth,
@@ -288,7 +302,7 @@ app.post('/api/v1/auth/resident/register', upload.single('id_proof_image'), asyn
 });
 
 // Endpoint: Unified Login (Handles both Officials and Residents)
-app.post('/api/v1/auth/login', async (req, res) => {
+app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
     try {
         const { email_or_username, password } = req.body;
 
@@ -367,7 +381,7 @@ app.post('/api/v1/auth/login', async (req, res) => {
 });
 
 // Endpoint: Forgot Password
-app.post('/api/v1/auth/forgot-password', async (req, res) => {
+app.post('/api/v1/auth/forgot-password', passwordResetLimiter, async (req, res) => {
     try {
         const { email } = req.body;
         if (!email) {
@@ -438,7 +452,7 @@ app.post('/api/v1/auth/forgot-password', async (req, res) => {
 });
 
 // Endpoint: Reset Password
-app.post('/api/v1/auth/reset-password', async (req, res) => {
+app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) => {
     try {
         const { email, token, new_password } = req.body;
         if (!email || !token || !new_password) {
@@ -486,7 +500,7 @@ app.post('/api/v1/auth/reset-password', async (req, res) => {
     }
 });
 
-app.post('/api/v1/setup/superadmin', async (req, res) => {
+app.post('/api/v1/setup/superadmin', registerLimiter, async (req, res) => {
     try {
         const hashedPassword = hashPassword('SuperAdmin123');
         const [existing] = await db.query('SELECT * FROM tbl_BarangayOfficials WHERE username = ?', ['superadmin']);
@@ -559,7 +573,7 @@ app.get('/api/v1/public/settings', async (req, res) => {
     }
 });
 
-app.post('/api/v1/setup/seed-public', async (req, res) => {
+app.post('/api/v1/setup/seed-public', registerLimiter, async (req, res) => {
     try {
         await db.query(`
             INSERT IGNORE INTO tbl_Announcements (title, content_body, status, expiry_date, is_pinned) 
@@ -886,7 +900,7 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Captain', '
 // FIX: Added upload.single('id_proof_image') to parse the FormData!
 // Endpoint 21: Create Document Request (With Secure Server-Side File Loophole)
 // UPDATE: Changed from upload.single to upload.fields
-app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), upload.fields([
+app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), requestCreationLimiter, upload.fields([
     { name: 'id_proof_image', maxCount: 1 },
     { name: 'supporting_docs', maxCount: 5 } // The Loophole Array
 ]), async (req, res) => {
@@ -1001,7 +1015,7 @@ app.get('/api/v1/requests/resident/me', verifyJWT, roleGuard(['Resident']), asyn
 });
 
 // Endpoint 23: Get Pending Requests (Secretary / Captain)
-app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Captain']), async (req, res) => {
+app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Captain']), adminLimiter, async (req, res) => {
     try {
         const query = `
             SELECT r.request_id, r.reference_no, res.first_name, res.last_name, res.id_proof_image, dt.type_name, r.purpose, r.date_requested
@@ -1022,7 +1036,7 @@ app.get('/api/v1/requests/pending', verifyJWT, roleGuard(['Secretary', 'Captain'
 
 // Endpoint 24: Initial Verification (Secretary / Captain)
 // Upgraded Endpoint 24: Initial Verification (With Audit Logging)
-app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'Secretary', 'Captain', 'Captain', 'Treasurer']), async (req, res) => {
+app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'Secretary', 'Captain', 'Captain', 'Treasurer']), adminLimiter, async (req, res) => {
     try {
         const { action, rejection_reason } = req.body; // action: 'Approve' or 'Reject'
         const { request_id } = req.params;
@@ -1190,7 +1204,7 @@ app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Treasurer', 'Capt
 });
 
 // Endpoint 24.5: Update Resident ID Proof (Resident Only)
-app.put('/api/v1/residents/me/id-proof', verifyJWT, roleGuard(['Resident']), async (req, res) => {
+app.put('/api/v1/residents/me/id-proof', verifyJWT, roleGuard(['Resident']), fileUploadLimiter, async (req, res) => {
     try {
         const { id_proof_filename } = req.body;
         const resident_id = req.user.id;
@@ -1566,7 +1580,7 @@ app.put('/api/v1/admin/requests/:id/status', verifyJWT, roleGuard(['Admin', 'Cap
 });
 
 // Endpoint 28: Mark Request as Ready for Pickup (Secretary / Captain)
-app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary', 'Captain']), async (req, res) => {
+app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary', 'Captain']), adminLimiter, async (req, res) => {
     try {
         const { request_id } = req.params;
 
@@ -1606,7 +1620,7 @@ app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Secretary',
 });
 
 // Endpoint 29: Issue Document (Secretary / Captain)
-app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary', 'Captain']), async (req, res) => {
+app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Secretary', 'Captain']), adminLimiter, async (req, res) => {
     try {
         const { request_id } = req.params;
 
@@ -1698,7 +1712,7 @@ app.get('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain', 'Captain']),
 });
 
 // Endpoint 31: PDF Generation & QR Stamping (Secretary / Captain)
-app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secretary', 'Captain']), async (req, res) => {
+app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secretary', 'Captain']), adminLimiter, async (req, res) => {
     try {
         const { request_id } = req.params;
 

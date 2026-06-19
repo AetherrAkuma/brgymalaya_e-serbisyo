@@ -1,98 +1,82 @@
-# Cloudflare Tunnel Setup & Verification Guide
+# Cloudflare Tunnel Setup Guide
 
-This guide explains how to expose your local **E-Serbisyo Barangay System** server (backend on port 3000, frontend on port 5173) to the internet using Cloudflare Tunnels or free temporary tunnels (like Localtunnel).
-
-Exposing the system is required to:
-1. Enable **webcam QR scanning** on mobile phones and external browsers (which requires HTTPS security).
-2. Allow external verification of Barangay certificates via stamped QR codes in the PDF templates.
+This guide explains how to expose your local **E-Serbisyo Barangay System** to the internet using Cloudflare Quick Tunnel — **no domain or account required**.
 
 ---
 
-## Option 1: Quick Tunnel (Free & No Account Required)
-If you just want to quickly test the QR scanner or verify pages from your phone, you can run a temporary tunnel:
+## Quick Start (Recommended)
 
-### A. Exposing the Backend (For API calls & verification links)
-1. Run the local backend server:
-   ```bash
-   cd server
-   npm start
-   ```
-2. Open a new terminal window and run:
-   ```bash
-   npm run tunnel
-   ```
-   *This commands runs `npx localtunnel --port 3000`, which gives you a public address like `https://glowing-elk-83.localtunnel.me`.*
-3. Copy this public URL.
-
-### B. Exposing the Frontend (For phone/camera scanning)
-1. In another terminal, expose port 5173 (Vite Client):
-   ```bash
-   npx localtunnel --port 5173
-   ```
-2. Copy the generated frontend HTTPS address. Open this URL on your phone or tablet to scan physical certificates!
-
-### C. Environmental Config Updates
-Make sure to update your environment files to sync URLs:
-- In [client/.env](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/client/.env), update the API base URL to point to your public backend URL:
-  ```env
-  VITE_API_BASE_URL=https://<your-public-backend-url>/api/v1
-  ```
-- In [server/.env](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/server/.env), update the verification base URL so printed QR codes point to your public frontend:
-  ```env
-  VERIFICATION_BASE_URL=https://<your-public-frontend-url>/verify
-  ```
+Double-click **`start-system.bat`** at the project root. This starts the backend, frontend, and Cloudflare tunnels automatically, then displays your public URLs.
 
 ---
 
-## Option 2: Permanent Cloudflare Tunnel (Recommended for Staging)
-To set up a stable, professional, and free tunnel with your own domain using Cloudflare:
+## Manual Setup
 
 ### 1. Install Cloudflared
-- Download the Windows MSI installer from the [official Cloudflare website](https://github.com/cloudflare/cloudflared/releases).
-- Or install using **winget** in PowerShell:
-  ```powershell
-  winget install --id Cloudflare.cloudflared
-  ```
 
-### 2. Authenticate Cloudflared
-Run this command in your command prompt/PowerShell:
-```bash
-cloudflared tunnel login
-```
-*This opens a browser window. Log in to your Cloudflare account and select your domain (e.g., `brgy143.gov.ph` or a free domain).*
-
-### 3. Create a Tunnel
-Create a tunnel named `barangay-tunnel`:
-```bash
-cloudflared tunnel create barangay-tunnel
-```
-*This generates a JSON credentials file on your computer and output a Tunnel ID.*
-
-### 4. Configure the Tunnel
-Create a file named `config.yml` inside your `.cloudflared` folder (usually located in `%USERPROFILE%\.cloudflared\config.yml` on Windows):
-```yaml
-tunnel: <TUNNEL_ID>
-credentials-file: C:\Users\<Username>\.cloudflared\<TUNNEL_ID>.json
-
-ingress:
-  - hostname: api.brgy143.gov.ph
-    service: http://localhost:3000
-  - hostname: portal.brgy143.gov.ph
-    service: http://localhost:5173
-  - service: http_status:404
+```powershell
+winget install --id Cloudflare.cloudflared
 ```
 
-### 5. Route Traffic (DNS Rules)
-Add DNS records pointing your domains to the tunnel:
-```bash
-cloudflared tunnel route dns barangay-tunnel api.brgy143.gov.ph
-cloudflared tunnel route dns barangay-tunnel portal.brgy143.gov.ph
+Or download the MSI from [github.com/cloudflare/cloudflared/releases](https://github.com/cloudflare/cloudflared/releases).
+
+> After installation, if `cloudflared` is not recognized, add `C:\Program Files (x86)\cloudflared` to your system PATH or use the full path: `"C:\Program Files (x86)\cloudflared\cloudflared.exe"`.
+
+### 2. Start the servers
+
+```powershell
+# Terminal 1: Backend
+cd server
+npm start
+
+# Terminal 2: Frontend
+cd client
+npm run dev
 ```
 
-### 6. Run the Tunnel
-Run your tunnel to establish the secure connection:
-```bash
-cloudflared tunnel run barangay-tunnel
+### 3. Start the tunnels
+
+```powershell
+# If cloudflared is not in PATH, use the full path:
+# "C:\Program Files (x86)\cloudflared\cloudflared.exe"
+
+# Terminal 3: Backend tunnel
+cloudflared tunnel --url http://127.0.0.1:3000
+
+# Terminal 4: Frontend tunnel
+cloudflared tunnel --url http://127.0.0.1:5173
 ```
-You can now access your portal at `https://portal.brgy143.gov.ph` and backend endpoints at `https://api.brgy143.gov.ph/api/v1` safely!
-Update your `.env` variables to match these domains.
+
+Each tunnel outputs a URL like `https://random-name.trycloudflare.com`.
+
+### 4. Update environment files
+
+```powershell
+# client/.env
+VITE_API_BASE_URL=https://<backend-tunnel-url>/api/v1
+
+# server/.env
+VERIFICATION_BASE_URL=https://<frontend-tunnel-url>/verify
+```
+
+---
+
+## Quick Tunnel (One Service)
+
+To expose just the backend (e.g., for API testing):
+
+```powershell
+cd server
+npm run tunnel
+```
+
+This runs `cloudflared tunnel --url http://127.0.0.1:3000` (uses the full path to the executable).
+
+---
+
+## Important Notes
+
+- **URLs change every restart** — the `start-system.ps1` script detects the new URLs and updates `.env` files automatically.
+- **HTTPS is handled by Cloudflare** — no need for local SSL certificates.
+- **Camera/QR scanning** works on any device accessing the tunnel URL (HTTPS).
+- **Free and unlimited** — no credit card required for Quick Tunnel.

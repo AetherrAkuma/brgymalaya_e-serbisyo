@@ -36,16 +36,23 @@ This script inserts a dummy authentic document in your database and generates a 
 
 ---
 
-## 🧪 Test 3: Local Tunnel Verification (Localtunnel)
+## 🧪 Test 3: Cloudflare Tunnel Verification
 This verifies exposing your local server to a public HTTPS URL (needed for mobile/webcam QR scanning).
 
-1. In the `server` folder, run the tunnel helper script:
+1. Run the automated start script (recommended):
    ```bash
+   start-system.bat
+   ```
+   The script automatically starts tunnels and updates `.env` files.
+
+2. Or manually expose just the backend:
+   ```bash
+   cd server
    npm run tunnel
    ```
-2. Copy the generated public URL (e.g. `https://some-name.localtunnel.me`).
-3. Set your client's environment base URL to this public link by editing [client/.env](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/client/.env):
+3. Copy the generated public URL (e.g. `https://random-name.trycloudflare.com`).
+4. Set your client's environment base URL to this public link by editing [client/.env](file:///c:/Users/reyma/Desktop/Development/Barangay%20System/client/.env):
    ```env
    VITE_API_BASE_URL=https://<your-copied-url>/api/v1
    ```
-4. Now, any network requests made by the frontend will point securely to the public tunnel endpoint!
+5. Now, any network requests made by the frontend will point securely to the public tunnel endpoint!
