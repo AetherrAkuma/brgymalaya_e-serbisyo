@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS tbl_Residents (
     contact_number VARCHAR(255) NOT NULL, -- Sized for AES256 Encrypted String
     password_hash VARCHAR(255) NOT NULL,  -- SHA256 Hash
     id_proof_image VARCHAR(255),          -- Encrypted File Path
-    account_status ENUM('Pending', 'Active', 'Blocked') DEFAULT 'Pending'
+    account_status ENUM('Pending', 'Active', 'Blocked') DEFAULT 'Pending',
+    require_password_change TINYINT(1) DEFAULT 0
 );
 
 -- 3. Document Types

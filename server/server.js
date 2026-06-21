@@ -361,7 +361,7 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
         // ---------------------------------------------------------
         // FIX: Ensuring the variable is strictly named 'residents'
         const [residents] = await db.query(
-            'SELECT resident_id, first_name, email_address, account_status FROM tbl_Residents WHERE email_address = ? AND password_hash = ?',
+            'SELECT resident_id, first_name, email_address, account_status, require_password_change FROM tbl_Residents WHERE email_address = ? AND password_hash = ?',
             [email_or_username, hashedPassword]
         );
 
@@ -409,7 +409,8 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
                 message: 'Resident login successful',
                 token: token,
                 role: 'Resident',
-                first_name: resident.first_name
+                first_name: resident.first_name,
+                mustChange: resident.require_password_change === 1
             });
         }
 
@@ -545,7 +546,7 @@ app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) =
         // 5. Update the user password in appropriate table
         const [residents] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email]);
         if (residents.length > 0) {
-            await db.query('UPDATE tbl_Residents SET password_hash = ? WHERE email_address = ?', [hashedPassword, email]);
+            await db.query('UPDATE tbl_Residents SET password_hash = ?, require_password_change = 0 WHERE email_address = ?', [hashedPassword, email]);
         } else {
             const [officials] = await db.query('SELECT user_id FROM tbl_BarangayOfficials WHERE email_official = ?', [email]);
             if (officials.length > 0) {
@@ -1222,7 +1223,7 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'C
 
         // 1. Get current status, reference number, resident contact info, and document details
         const [current] = await db.query(`
-            SELECT r.request_status, r.reference_no, r.resident_id, res.first_name, res.email_address, dt.type_name, dt.base_fee
+            SELECT r.request_status, r.reference_no, r.resident_id, res.first_name, res.email_address, dt.type_name, dt.base_fee, r.purpose
             FROM tbl_Requests r
             JOIN tbl_Residents res ON r.resident_id = res.resident_id
             JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
@@ -1233,7 +1234,7 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'C
         const oldStatus = current[0].request_status;
         const refNo = current[0].reference_no;
         const resident_id = current[0].resident_id;
-        const { first_name, email_address, type_name, base_fee } = current[0];
+        const { first_name, email_address, type_name, base_fee, purpose } = current[0];
 
         let newStatus = action === 'Reject' ? 'Rejected' : 'For Payment';
 
@@ -1250,15 +1251,25 @@ app.put('/api/v1/requests/:request_id/verify', verifyJWT, roleGuard(['Admin', 'C
         }
 
         // 3. Log the change to the Audit Trail (Phase 8 Requirement)
-        await logStatusChange(official_id, request_id, oldStatus, newStatus, `Admin ${action}ed request ${refNo}`);
+        await logStatusChange(official_id, 'Official', 'tbl_Requests', request_id, oldStatus, newStatus, req.ip);
 
         // 4. Send Email Notification
         let emailSubject = '';
         let emailHtml = '';
 
         if (newStatus === 'For Payment') {
+            const isJobseeker = purpose && purpose.includes('[FIRST-TIME JOBSEEKER]');
+            const isFree = Number(base_fee) === 0;
+
             emailSubject = `Document Request Approved - Reference #${refNo}`;
-            emailHtml = `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${refNo}</b>) has been approved!<br/><br/>To proceed with document processing, please pay the fee of <b>PHP ${base_fee}</b> at the Barangay Treasurer's office.<br/><br/>Thank you!`;
+            
+            if (isJobseeker) {
+                emailHtml = `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${refNo}</b>) has been approved!<br/><br/>Under the First-Time Jobseekers Assistance Act (RA 11261), your document is <b>exempted from fees</b>. Please present your Reference Number and original signed Oath/Agreement at the Treasurer's desk to verify your exemption.<br/><br/>Thank you!`;
+            } else if (isFree) {
+                emailHtml = `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${refNo}</b>) has been approved!<br/><br/>This document is <b>free of charge</b>. Please present your Reference Number at the Treasurer's desk to clear your document for processing.<br/><br/>Thank you!`;
+            } else {
+                emailHtml = `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${refNo}</b>) has been approved!<br/><br/>To proceed with document processing, please pay the fee of <b>PHP ${base_fee}</b> at the Barangay Treasurer's office.<br/><br/>Thank you!`;
+            }
         } else {
             emailSubject = `Document Request Rejected - Reference #${refNo}`;
             emailHtml = `Hi ${first_name},<br/><br/>Your request for <b>${type_name}</b> (Reference No: <b>${refNo}</b>) was rejected.<br/><br/><b>Reason for Rejection:</b> ${rejection_reason || 'No specific reason provided.'}<br/><br/>If you have questions, please visit or contact the Barangay Hall.`;
@@ -1414,7 +1425,8 @@ app.put('/api/v1/payments/:request_id', verifyJWT, roleGuard(['Captain', 'Treasu
         await db.query(updateQuery, [treasurer_id, request_id]);
 
         // 3. Log the Financial Transaction to the Audit Trail (Phase 8)
-        await logPayment(treasurer_id, request_id, amount_paid, or_number, `Payment received for ${request[0].reference_no}`);
+        await logPayment(treasurer_id, 'Official', request_id, amount_paid, or_number, req.ip);
+        await logStatusChange(treasurer_id, 'Official', 'tbl_Requests', request_id, 'For Payment', 'Processing', req.ip);
 
         res.status(200).json({
             status: 'success',
@@ -1506,7 +1518,7 @@ app.get('/api/v1/residents/me/profile', verifyJWT, roleGuard(['Resident']), asyn
 
         // 1. Match the real column names: address_street and contact_number
         const [rows] = await db.query(
-            'SELECT first_name, last_name, email_address, contact_number, address_street, account_status, id_proof_image FROM tbl_Residents WHERE resident_id = ?',
+            'SELECT first_name, last_name, email_address, contact_number, address_street, account_status, id_proof_image, require_password_change FROM tbl_Residents WHERE resident_id = ?',
             [residentId]
         );
 
@@ -1529,6 +1541,43 @@ app.get('/api/v1/residents/me/profile', verifyJWT, roleGuard(['Resident']), asyn
         res.status(200).json({ status: 'success', data: user });
     } catch (error) {
         console.error("PROFILE FETCH ERROR:", error.message);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint: Update Resident Password (Resident Only)
+app.put('/api/v1/residents/me/password', verifyJWT, roleGuard(['Resident']), async (req, res) => {
+    try {
+        const { current_password, new_password } = req.body;
+        const residentId = req.user.id;
+
+        if (!current_password || !new_password) {
+            return res.status(400).json({ error: 'Current and new password are required.' });
+        }
+        if (new_password.length < 8) {
+            return res.status(400).json({ error: 'New password must be at least 8 characters long.' });
+        }
+
+        const [user] = await db.query('SELECT password_hash FROM tbl_Residents WHERE resident_id = ?', [residentId]);
+        if (user.length === 0) {
+            return res.status(404).json({ error: 'Resident not found' });
+        }
+
+        const hashedCurrent = crypto.createHash('sha256').update(current_password).digest('hex');
+        if (hashedCurrent !== user[0].password_hash) {
+            return res.status(400).json({ error: 'Incorrect current password' });
+        }
+
+        const hashedNew = crypto.createHash('sha256').update(new_password).digest('hex');
+
+        await db.query(
+            'UPDATE tbl_Residents SET password_hash = ?, require_password_change = 0 WHERE resident_id = ?',
+            [hashedNew, residentId]
+        );
+
+        res.status(200).json({ status: 'success', message: 'Password updated successfully and account secured.' });
+    } catch (error) {
+        console.error("RESIDENT PASSWORD UPDATE ERROR:", error.message);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
@@ -1727,6 +1776,10 @@ app.post('/api/v1/payments', verifyJWT, roleGuard(['Treasurer', 'Captain']), asy
             next_request_status = 'Cancelled';
         }
 
+        // Get old status for status change log
+        const [oldRequest] = await db.query('SELECT request_status FROM tbl_Requests WHERE request_id = ?', [request_id]);
+        const oldStatus = oldRequest.length > 0 ? oldRequest[0].request_status : 'For Payment';
+
         // Update the request status
         const updateRequestQuery = `
             UPDATE tbl_Requests 
@@ -1734,6 +1787,12 @@ app.post('/api/v1/payments', verifyJWT, roleGuard(['Treasurer', 'Captain']), asy
             WHERE request_id = ?
         `;
         await db.query(updateRequestQuery, [next_request_status, request_id]);
+
+        // Audit Logging
+        await logPayment(treasurer_id, 'Official', request_id, amount_paid, or_number, req.ip);
+        if (oldStatus !== next_request_status) {
+            await logStatusChange(treasurer_id, 'Official', 'tbl_Requests', request_id, oldStatus, next_request_status, req.ip);
+        }
 
         // Fetch request and resident details for email
         const [reqDetails] = await db.query(`
@@ -1800,6 +1859,10 @@ app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer
         `;
         await db.query(updateRequestQuery, [request_id]);
 
+        // Audit Logging
+        await logPayment(treasurer_id, 'Official', request_id, 0.00, pseudo_or, req.ip);
+        await logStatusChange(treasurer_id, 'Official', 'tbl_Requests', request_id, 'For Payment', 'Processing', req.ip);
+
         // Fetch request and resident details for email
         const [reqDetails] = await db.query(`
             SELECT r.reference_no, res.first_name, res.email_address, dt.type_name
@@ -1847,7 +1910,7 @@ app.put('/api/v1/admin/requests/:id/status', verifyJWT, roleGuard(['Admin', 'Cap
         await db.query(updateQuery, [new_status, rejection_reason || null, adminId, id]);
 
         // 3. Log the change to the Audit Trail
-        await logStatusChange(adminId, id, oldStatus, new_status, `Admin ${new_status} request ${refNo}`);
+        await logStatusChange(adminId, 'Official', 'tbl_Requests', id, oldStatus, new_status, req.ip);
 
         res.status(200).json({
             status: 'success',
@@ -1875,6 +1938,9 @@ app.put('/api/v1/requests/:request_id/ready', verifyJWT, roleGuard(['Admin', 'Ca
         if (result.affectedRows === 0) {
             return res.status(400).json({ error: 'Request must be in Processing state to be marked as Ready for Pickup.' });
         }
+
+        // Audit Logging
+        await logStatusChange(req.user.id, 'Official', 'tbl_Requests', request_id, 'Processing', 'Ready for Pickup', req.ip);
 
         // Fetch request and resident details for email
         const [reqDetails] = await db.query(`
@@ -1915,6 +1981,9 @@ app.put('/api/v1/requests/:request_id/issue', verifyJWT, roleGuard(['Admin', 'Ca
         if (result.affectedRows === 0) {
             return res.status(400).json({ error: 'Request must be Ready for Pickup before it can be Issued.' });
         }
+
+        // Audit Logging
+        await logStatusChange(req.user.id, 'Official', 'tbl_Requests', request_id, 'Ready for Pickup', 'Issued', req.ip);
 
         // Fetch request and resident details for email
         const [reqDetails] = await db.query(`
@@ -2046,6 +2115,9 @@ app.get('/api/v1/requests/:request_id/generate-pdf', verifyJWT, roleGuard(['Secr
 
         // 6. Generate the PDF with the layout config and template
         const pdfBuffer = await generateBarangayPDF(requestData, sigBuffer, verificationUrl, layout, templateBuffer);
+
+        // Audit Logging for Document Printed
+        await logDocumentPrint(req.user.id, 'Official', request_id, requestData.reference_no, req.ip);
 
         // 7. Serve the PDF
         res.setHeader('Content-Type', 'application/pdf');
@@ -2582,9 +2654,206 @@ if (shouldRunCron) {
 (async () => {
     try {
         await db.query(`ALTER TABLE tbl_Announcements MODIFY COLUMN status ENUM('Draft','Pending Approval','Published','Archived') DEFAULT 'Draft'`);
-        console.log('[MIGRATION] Announcements status ENUM updated.');
     } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') console.error('[MIGRATION]', e.message); }
+    try {
+        const [columns] = await db.query("SHOW COLUMNS FROM tbl_Residents LIKE 'require_password_change'");
+        if (columns.length === 0) {
+            await db.query("ALTER TABLE tbl_Residents ADD COLUMN require_password_change TINYINT(1) DEFAULT 0");
+            console.log("✅ Migrated tbl_Residents: added require_password_change column.");
+        }
+    } catch (e) { console.error('[MIGRATION tbl_Residents]', e.message); }
+
+    // Check if live DB schema matches server/schema.sql (XAMPP database synchronization verification)
+    try {
+        const { verifySchema } = require('./utils/schemaChecker');
+        await verifySchema(db);
+    } catch (e) { console.error('[SCHEMA CHECK ERROR]', e.message); }
 })();
+
+// ==========================================
+// WALK-IN SYSTEM INTEGRATION
+// ==========================================
+
+// Endpoint: Quick Register Resident (Admin, Captain, Secretary)
+app.post('/api/v1/admin/residents/quick-register', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), upload.single('id_proof_image'), async (req, res) => {
+    try {
+        const {
+            first_name, middle_name, last_name, date_of_birth,
+            civil_status, address_street, email_address, contact_number
+        } = req.body;
+
+        if (!first_name || !last_name || !date_of_birth || !civil_status || !address_street || !email_address || !contact_number) {
+            return res.status(400).json({ error: 'All required fields must be provided.' });
+        }
+
+        // Check for uploaded ID proof
+        if (!req.file || !req.file.buffer) {
+            return res.status(400).json({ error: 'Official ID proof image is required.' });
+        }
+
+        const [existing] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email_address]);
+
+        if (existing && existing.length > 0) {
+            return res.status(400).json({ error: 'Email address is already registered.' });
+        }
+
+        // Process ID proof file
+        const idFile = req.file;
+        let ext = '.bin';
+        if (idFile.mimetype === 'image/jpeg') ext = '.jpg';
+        else if (idFile.mimetype === 'image/png') ext = '.png';
+        else if (idFile.mimetype === 'application/pdf') ext = '.pdf';
+
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const savedFilename = `idproof_reg_${uniqueSuffix}${ext}.enc`;
+
+        // Encrypt and save to the vault
+        encryptAndSaveFile(idFile.buffer, savedFilename);
+
+        // Generate temporary password
+        const tempPassword = `Welcome${last_name.replace(/\s+/g, '')}${new Date(date_of_birth).getFullYear()}!`;
+        const hashedPassword = hashPassword(tempPassword);
+        const encryptedContact = encryptData(contact_number);
+
+        const insertQuery = `
+            INSERT INTO tbl_Residents 
+            (first_name, middle_name, last_name, date_of_birth, civil_status, address_street, email_address, contact_number, password_hash, id_proof_image, account_status, require_password_change)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 1)
+        `;
+
+        const [result] = await db.query(insertQuery, [
+            first_name, middle_name || null, last_name, date_of_birth,
+            civil_status, address_street, email_address, encryptedContact, hashedPassword, savedFilename
+        ]);
+
+        // Audit Log
+        await logAction({
+            user_id: req.user.id,
+            user_type: 'Official',
+            table_affected: 'tbl_Residents',
+            record_id: result.insertId,
+            action_type: 'QUICK_REGISTER_RESIDENT',
+            old_value: null,
+            new_value: { first_name, last_name, email_address },
+            ip_address: req.ip
+        });
+
+        res.status(201).json({
+            status: 'success',
+            message: 'Resident registered successfully.',
+            resident_id: result.insertId,
+            temp_password: tempPassword
+        });
+
+    } catch (error) {
+        console.error("[QUICK REGISTER ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint: Submit Walk-In Request (Admin, Captain, Secretary)
+app.post('/api/v1/admin/walkin-request', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), upload.fields([
+    { name: 'supporting_docs', maxCount: 5 }
+]), async (req, res) => {
+    try {
+        const { resident_id, doc_type_id, purpose } = req.body;
+        const official_id = req.user.id;
+
+        if (!resident_id || !doc_type_id || !purpose) {
+            return res.status(400).json({ status: 'error', message: 'resident_id, doc_type_id, and purpose are required.' });
+        }
+
+        // Active Request Constraint (5.2)
+        const [existingActive] = await db.query(`
+            SELECT request_id FROM tbl_Requests 
+            WHERE resident_id = ? AND doc_type_id = ? 
+            AND request_status IN ('Pending', 'For Verification', 'For Payment', 'Processing', 'Ready for Pickup')
+        `, [resident_id, doc_type_id]);
+
+        if (existingActive.length > 0) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'This resident already has an active request for this document type.'
+            });
+        }
+
+        // Get resident details
+        const [residentRows] = await db.query('SELECT first_name, last_name, email_address FROM tbl_Residents WHERE resident_id = ?', [resident_id]);
+        if (residentRows.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'Resident not found.' });
+        }
+        const resident = residentRows[0];
+
+        // Generate Reference Number (WLK prefix for walk-ins)
+        const dateString = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const randomStr = Math.floor(1000 + Math.random() * 9000);
+        const reference_no = `WLK-${dateString}-${randomStr}`;
+
+        // Process Supporting Documents
+        if (req.files && req.files['supporting_docs']) {
+            req.files['supporting_docs'].forEach((file, index) => {
+                if (file.buffer) {
+                    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+                    let ext = '.bin';
+                    if (file.mimetype === 'image/jpeg') ext = '.jpg';
+                    else if (file.mimetype === 'image/png') ext = '.png';
+                    else if (file.mimetype === 'application/pdf') ext = '.pdf';
+
+                    const savedSupportName = `support_${reference_no}_${index}_${uniqueSuffix}${ext}.enc`;
+                    encryptAndSaveFile(file.buffer, savedSupportName);
+                }
+            });
+        }
+
+        const initialStatus = 'For Payment'; // Always For Payment to Treasurer
+
+        // Insert request
+        const insertRequestQuery = `
+            INSERT INTO tbl_Requests (resident_id, doc_type_id, reference_no, purpose, request_status, processed_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `;
+        const [result] = await db.query(insertRequestQuery, [resident_id, doc_type_id, reference_no, purpose, initialStatus, official_id]);
+        const requestId = result.insertId;
+
+        // Log request status change
+        await logStatusChange(official_id, 'Official', 'tbl_Requests', requestId, 'Pending', initialStatus, req.ip);
+
+        // Send Email notification
+        try {
+            const [docTypeRows] = await db.query('SELECT type_name, base_fee FROM tbl_DocumentTypes WHERE doc_type_id = ?', [doc_type_id]);
+            if (docTypeRows.length > 0) {
+                const { type_name, base_fee } = docTypeRows[0];
+                const isJobseeker = purpose && purpose.includes('[FIRST-TIME JOBSEEKER]');
+                const isFree = Number(base_fee) === 0;
+
+                let emailSubject = `Walk-in Document Request Registered - #${reference_no}`;
+                let emailHtml = '';
+                
+                if (isJobseeker) {
+                    emailHtml = `Hi ${resident.first_name},<br/><br/>A walk-in request for <b>${type_name}</b> (Reference No: <b>${reference_no}</b>) has been registered.<br/><br/>Under the First-Time Jobseekers Assistance Act (RA 11261), your document is <b>exempted from fees</b>. Please verify your original signed Oath/Agreement at the Treasurer's desk to clear your document for processing.<br/><br/>Thank you!`;
+                } else if (isFree) {
+                    emailHtml = `Hi ${resident.first_name},<br/><br/>A walk-in request for <b>${type_name}</b> (Reference No: <b>${reference_no}</b>) has been registered.<br/><br/>This document is <b>free of charge</b>. Please head to the Treasurer's desk with your reference number to clear it for processing.<br/><br/>Thank you!`;
+                } else {
+                    emailHtml = `Hi ${resident.first_name},<br/><br/>A walk-in request for <b>${type_name}</b> (Reference No: <b>${reference_no}</b>) has been registered.<br/><br/>To proceed with document processing, please pay the fee of <b>PHP ${base_fee}</b> at the Barangay Treasurer's office.<br/><br/>Thank you!`;
+                }
+                await sendEmail(resident.email_address, emailSubject, emailHtml);
+            }
+        } catch (emailErr) {
+            console.error("Failed to send walk-in email", emailErr);
+        }
+
+        res.status(201).json({
+            status: 'success',
+            message: `Walk-in request created successfully. Status: ${initialStatus}`,
+            reference_no,
+            request_id: Number(requestId)
+        });
+
+    } catch (error) {
+        console.error("[WALK-IN REQUEST ERROR]:", error);
+        res.status(500).json({ status: 'error', message: error.message });
+    }
+});
 
 // Start the server
 app.listen(PORT, '0.0.0.0', () => {

@@ -20,6 +20,7 @@ import HistoryIcon from '@mui/icons-material/History';
 import GroupsIcon from '@mui/icons-material/Groups';
 import BackupIcon from '@mui/icons-material/Backup';
 import QrCodeIcon from '@mui/icons-material/QrCode';
+import InputIcon from '@mui/icons-material/Input';
 import ForcePasswordChange from '../pages/admin/ForcePasswordChange';
 
 const drawerWidth = 260;
@@ -57,6 +58,12 @@ export default function AdminLayout() {
           icon: <AssignmentIcon />, 
           path: '/admin/requests', 
           visible: true 
+        },
+        { 
+          text: 'Walk-In Desk', 
+          icon: <InputIcon />, 
+          path: '/admin/walkin', 
+          visible: ['Super Admin', 'Captain', 'Secretary', 'Admin'].includes(userRole) 
         },
         { 
           text: 'Payments Desk', 

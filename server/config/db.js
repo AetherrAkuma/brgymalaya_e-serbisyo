@@ -13,14 +13,30 @@ const pool = mysql.createPool({
     multipleStatements: true // Required to run the schema.sql file
 });
 
-// Test the connection
-pool.getConnection()
-    .then(connection => {
-        console.log('✅ Connected to MariaDB/MySQL securely.');
+let isDbConnected = false;
+let firstCheck = true;
+
+async function checkConnection() {
+    try {
+        const connection = await pool.getConnection();
         connection.release();
-    })
-    .catch(err => {
-        console.error('❌ Database connection failed:', err.message);
-    });
+        if (!isDbConnected) {
+            console.log('✅ Connected to MariaDB/MySQL securely.');
+            isDbConnected = true;
+        }
+    } catch (err) {
+        if (isDbConnected || firstCheck) {
+            console.error(`❌ Database connection failed/offline: ${err.message}. Retrying...`);
+            isDbConnected = false;
+        }
+    } finally {
+        firstCheck = false;
+        // Ping every 10 seconds (respecting resource usage and rate limits)
+        setTimeout(checkConnection, 10000);
+    }
+}
+
+// Start continuous background checking
+checkConnection();
 
 module.exports = pool;

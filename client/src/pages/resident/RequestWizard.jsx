@@ -24,6 +24,7 @@ export default function RequestWizard() {
   const navigate = useNavigate();
   const [activeStep, setActiveStep] = useState(0);
   const [dpaConsentChecked, setDpaConsentChecked] = useState(false);
+  const [isJobseeker, setIsJobseeker] = useState(false);
   
   const [selectedFile, setSelectedFile] = useState(null);
   const [supportingFiles, setSupportingFiles] = useState([]);
@@ -74,7 +75,8 @@ export default function RequestWizard() {
     try {
       const payload = new FormData();
       payload.append('doc_type_id', formData.doc_type_id);
-      payload.append('purpose', formData.purpose);
+      const finalPurpose = isJobseeker ? `[FIRST-TIME JOBSEEKER] ${formData.purpose}` : formData.purpose;
+      payload.append('purpose', finalPurpose);
       payload.append('dpa_consent', 'true');
       
       if (selectedFile) payload.append('id_proof_image', selectedFile);
@@ -149,6 +151,30 @@ export default function RequestWizard() {
       </Box>
 
       <Divider sx={{ my: 1.5 }} />
+
+      <Box sx={{ mb: 2 }}>
+        <FormControlLabel
+          control={
+            <Checkbox
+              checked={isJobseeker}
+              onChange={(e) => setIsJobseeker(e.target.checked)}
+              color="primary"
+            />
+          }
+          label={
+            <Typography variant="body2" fontWeight="700" color="text.primary">
+              First-Time Jobseeker (Exempt from Fee under RA 11261)
+            </Typography>
+          }
+        />
+        {isJobseeker && (
+          <Alert severity="info" sx={{ mt: 1, borderRadius: 2, py: 0.5 }}>
+            <Typography sx={{ fontSize: '0.75rem', lineHeight: 1.3 }}>
+              ⚠️ Under RA 11261, you are exempt from document fees. You <strong>must</strong> upload your Barangay First-Time Jobseeker Oath & Agreement in Step 4 to verify your exemption.
+            </Typography>
+          </Alert>
+        )}
+      </Box>
 
       <Typography variant="body2" fontWeight="700" gutterBottom>
         Purpose of Request
@@ -282,7 +308,11 @@ export default function RequestWizard() {
               </Stack>
             </Box>
           ) : (
-            selectedDocInfo?.requirements && 
+            isJobseeker ? (
+              <Typography variant="caption" color="error" sx={{ textAlign: 'center', display: 'block', fontStyle: 'italic', fontWeight: 'bold' }}>
+                * Under RA 11261, you must attach your signed First-Time Jobseeker Oath/Agreement to proceed.
+              </Typography>
+            ) : selectedDocInfo?.requirements && 
             selectedDocInfo.requirements.trim() !== '' && 
             !/^(none|no requirements|n\/a|no specific requirements|no specific requirements listed)/i.test(selectedDocInfo.requirements.trim()) ? (
               <Typography variant="caption" color="error" sx={{ textAlign: 'center', display: 'block', fontStyle: 'italic' }}>
@@ -443,7 +473,9 @@ export default function RequestWizard() {
               </Grid>
               <Grid item xs={8}>
                 <Paper elevation={0} sx={{ p: 1, bgcolor: '#f8fafc', borderRadius: 1.5, border: '1px solid #e2e8f0' }}>
-                  <Typography sx={{ fontSize: '0.8rem' }}>{formData.purpose}</Typography>
+                  <Typography sx={{ fontSize: '0.8rem' }}>
+                    {isJobseeker ? `[FIRST-TIME JOBSEEKER] ${formData.purpose}` : formData.purpose}
+                  </Typography>
                 </Paper>
               </Grid>
               
@@ -497,7 +529,9 @@ export default function RequestWizard() {
           
           <Box sx={{ bgcolor: '#f8fafc', px: 2, py: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="caption" color="text.secondary" fontWeight="600">Total Fee</Typography>
-            <Typography variant="h6" fontWeight="800" color="primary.main">₱{selectedDocInfo?.base_fee}</Typography>
+            <Typography variant="h6" fontWeight="800" color="primary.main">
+              {isJobseeker ? '₱0.00 (Exempted)' : `₱${selectedDocInfo?.base_fee}`}
+            </Typography>
           </Box>
         </Paper>
         
@@ -517,6 +551,7 @@ export default function RequestWizard() {
     if (activeStep === 1) return !formData.doc_type_id || !formData.purpose.trim();
     if (activeStep === 2) return !selectedFile;
     if (activeStep === 3) {
+      if (isJobseeker) return supportingFiles.length === 0;
       const selectedDoc = availableDocs.find(d => d.doc_type_id === formData.doc_type_id);
       const hasReqs = selectedDoc?.requirements && 
         selectedDoc.requirements.trim() !== '' && 

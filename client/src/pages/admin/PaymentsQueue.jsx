@@ -131,6 +131,24 @@ export default function PaymentsQueue() {
     finally { setProcessingAction(null); }
   };
 
+  const handleProcessExemption = async () => {
+    if (!selectedReq) return;
+    setProcessingAction('exempt');
+    try {
+      const payorName = `${selectedReq.first_name} ${selectedReq.last_name}`;
+      await api.post(`/payments/exempt/${selectedReq.request_id}`, {
+        payor_name: payorName
+      });
+      handleCloseAll();
+      fetchRequests();
+      showSnackbar("Document exempted from fee successfully under RA 11261.", "success");
+    } catch (err) {
+      showSnackbar(err.response?.data?.message || "Exemption failed.", "error");
+    } finally {
+      setProcessingAction(null);
+    }
+  };
+
   // --- NEW SECRETARY FULFILLMENT HANDLERS ---
   const handleGeneratePDF = async (id, refNo) => {
     setProcessingAction('print');
@@ -211,9 +229,23 @@ export default function PaymentsQueue() {
           <TableBody>
             {requests.map((row) => (
               <TableRow key={row.request_id} hover>
-                <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>{row.reference_no}</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <span style={{ color: '#2563eb' }}>{row.reference_no}</span>
+                    {row.reference_no.startsWith('WLK-') && (
+                      <Chip label="WALK-IN" size="small" sx={{ bgcolor: '#e0f7fa', color: '#006064', fontWeight: 'bold', fontSize: '0.65rem', height: 18, borderRadius: '4px' }} />
+                    )}
+                  </Stack>
+                </TableCell>
                 <TableCell>{row.first_name} {row.last_name}</TableCell>
-                <TableCell>{row.type_name}</TableCell>
+                <TableCell>
+                  <Box>
+                    <Typography variant="body2">{row.type_name}</Typography>
+                    {row.purpose && row.purpose.includes('[FIRST-TIME JOBSEEKER]') && (
+                      <Chip label="JOBSEEKER (RA 11261)" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', fontSize: '0.65rem', height: 18, borderRadius: '4px', mt: 0.5 }} />
+                    )}
+                  </Box>
+                </TableCell>
                 <TableCell>₱{row.base_fee}</TableCell>
                 <TableCell><Chip label={row.request_status} color={getStatusColor(row.request_status)} size="small" sx={{ fontWeight: 'bold' }} /></TableCell>
                 <TableCell align="center">
@@ -274,9 +306,14 @@ export default function PaymentsQueue() {
             {requests.map((row) => (
               <Card key={row.request_id} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                  <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
-                    {row.reference_no}
-                  </Typography>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
+                      {row.reference_no}
+                    </Typography>
+                    {row.reference_no.startsWith('WLK-') && (
+                      <Chip label="WALK-IN" size="small" sx={{ bgcolor: '#e0f7fa', color: '#006064', fontWeight: 'bold', fontSize: '0.6rem', height: 16, borderRadius: '4px' }} />
+                    )}
+                  </Stack>
                   <Chip label={row.request_status} color={getStatusColor(row.request_status)} size="small" sx={{ fontWeight: 'bold' }} />
                 </Box>
                 
@@ -284,9 +321,14 @@ export default function PaymentsQueue() {
                   {row.first_name} {row.last_name}
                 </Typography>
                 
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                  Document: {row.type_name}
-                </Typography>
+                <Box sx={{ mt: 0.5 }}>
+                  <Typography variant="body2" color="text.secondary" display="inline">
+                    Document: {row.type_name}
+                  </Typography>
+                  {row.purpose && row.purpose.includes('[FIRST-TIME JOBSEEKER]') && (
+                    <Chip label="JOBSEEKER (RA 11261)" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', fontSize: '0.6rem', height: 16, borderRadius: '4px', ml: 1, verticalAlign: 'middle' }} />
+                  )}
+                </Box>
                 
                 <Typography variant="body2" fontWeight="bold" sx={{ mt: 0.5 }}>
                   Fee: ₱{row.base_fee}
@@ -450,6 +492,16 @@ export default function PaymentsQueue() {
             </DialogContent>
             <DialogActions sx={{ p: 2, bgcolor: '#fafafa' }}>
               <Button onClick={handleCloseAll} color="inherit" sx={{ fontWeight: 'bold' }}>Cancel</Button>
+              <Button 
+                variant="outlined" 
+                color="success" 
+                onClick={handleProcessExemption} 
+                disabled={!!processingAction}
+                startIcon={processingAction === 'exempt' ? <CircularProgress size={18} color="inherit" /> : null}
+                sx={{ fontWeight: 'bold', mr: 'auto' }}
+              >
+                {processingAction === 'exempt' ? 'Exempting...' : 'Exempt (RA 11261)'}
+              </Button>
               <Button variant="contained" color="success" onClick={handleProcessPayment} disabled={!isPaymentValid || !!processingAction} startIcon={processingAction === 'payment' ? <CircularProgress size={18} color="inherit" /> : null} className={processingAction === 'payment' ? 'btn-loading' : ''} sx={{ fontWeight: 'bold' }}>
                 {processingAction === 'payment' ? 'Processing...' : 'Confirm Payment'}
               </Button>

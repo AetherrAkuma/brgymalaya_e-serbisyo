@@ -136,6 +136,24 @@ export default function RequestsQueue() {
     finally { setProcessingAction(null); }
   };
 
+  const handleProcessExemption = async () => {
+    if (!selectedReq) return;
+    setProcessingAction('exempt');
+    try {
+      const payorName = `${selectedReq.first_name} ${selectedReq.last_name}`;
+      await api.post(`/payments/exempt/${selectedReq.request_id}`, {
+        payor_name: payorName
+      });
+      handleCloseAll();
+      fetchRequests();
+      showSnackbar("Document exempted from fee successfully under RA 11261.", "success");
+    } catch (err) {
+      showSnackbar(err.response?.data?.message || "Exemption failed.", "error");
+    } finally {
+      setProcessingAction(null);
+    }
+  };
+
   const handlePrintPDF = async (id, refNo) => {
     setProcessingAction('print');
     try {
@@ -238,14 +256,26 @@ export default function RequestsQueue() {
                     '&:last-child td': { border: 0 }
                 }}
               >
-                <TableCell sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>{row.reference_no}</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <span style={{ color: theme.palette.primary.main }}>{row.reference_no}</span>
+                    {row.reference_no.startsWith('WLK-') && (
+                      <Chip label="WALK-IN" size="small" sx={{ bgcolor: '#e0f7fa', color: '#006064', fontWeight: 'bold', fontSize: '0.65rem', height: 18, borderRadius: '4px' }} />
+                    )}
+                  </Stack>
+                </TableCell>
                 <TableCell>
                     <Typography variant="body2" fontWeight="600">{row.first_name} {row.last_name}</Typography>
                 </TableCell>
                 <TableCell>
                     <Stack direction="row" spacing={1} alignItems="center">
                         <DescriptionIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                        <Typography variant="body2">{row.type_name}</Typography>
+                        <Box>
+                          <Typography variant="body2" display="inline">{row.type_name}</Typography>
+                          {row.purpose && row.purpose.includes('[FIRST-TIME JOBSEEKER]') && (
+                            <Chip label="JOBSEEKER (RA 11261)" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', fontSize: '0.65rem', height: 18, borderRadius: '4px', ml: 1 }} />
+                          )}
+                        </Box>
                     </Stack>
                 </TableCell>
                 <TableCell>
@@ -311,17 +341,28 @@ export default function RequestsQueue() {
             {filteredRequests.map((row) => (
               <Card key={row.request_id} variant="outlined" sx={{ borderRadius: 3, p: 2, border: '1px solid #e2e8f0' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                  <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
-                    {row.reference_no}
-                  </Typography>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
+                      {row.reference_no}
+                    </Typography>
+                    {row.reference_no.startsWith('WLK-') && (
+                      <Chip label="WALK-IN" size="small" sx={{ bgcolor: '#e0f7fa', color: '#006064', fontWeight: 'bold', fontSize: '0.6rem', height: 16, borderRadius: '4px' }} />
+                    )}
+                  </Stack>
                   {getStatusChip(row.request_status)}
                 </Box>
                 <Typography variant="body1" fontWeight="bold">
                   {row.first_name} {row.last_name}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <DescriptionIcon sx={{ fontSize: 16 }} /> {row.type_name}
-                </Typography>
+                <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+                  <DescriptionIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                  <Typography variant="body2" color="text.secondary" display="inline">
+                    {row.type_name}
+                  </Typography>
+                  {row.purpose && row.purpose.includes('[FIRST-TIME JOBSEEKER]') && (
+                    <Chip label="JOBSEEKER (RA 11261)" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', fontSize: '0.6rem', height: 16, borderRadius: '4px', ml: 0.5 }} />
+                  )}
+                </Box>
                 <Typography variant="body2" fontWeight="bold" sx={{ mt: 0.5 }}>
                   Fee: ₱{row.base_fee}
                 </Typography>
@@ -480,7 +521,17 @@ export default function RequestsQueue() {
                 <DialogActions sx={{ p: 3 }}>
                     <Button onClick={handleCloseAll} color="inherit">Cancel</Button>
                     <Button 
-                        variant="contained" color="success" size="large" fullWidth
+                        variant="outlined" 
+                        color="success" 
+                        onClick={handleProcessExemption} 
+                        disabled={!!processingAction}
+                        startIcon={processingAction === 'exempt' ? <CircularProgress size={18} color="inherit" /> : null}
+                        sx={{ fontWeight: 'bold', mr: 'auto', borderRadius: 3 }}
+                    >
+                        {processingAction === 'exempt' ? 'Exempting...' : 'Exempt (RA 11261)'}
+                    </Button>
+                    <Button 
+                        variant="contained" color="success" size="large"
                         onClick={handleProcessPayment} 
                         disabled={changeDue < 0 || !paymentData.or_number || !!processingAction}
                         startIcon={processingAction === 'payment' ? <CircularProgress size={20} color="inherit" /> : null}

@@ -25,6 +25,7 @@ import ManageOfficials from './pages/admin/ManageOfficials';
 import AuditLogs from './pages/admin/AuditLogs';
 import SystemSettings from './pages/admin/SystemSettings';
 import BackupManagement from './pages/admin/BackupManagement';
+import WalkinRequest from './pages/admin/WalkinRequest';
 
 import VerifyQR from './pages/public/VerifyQR';
 
@@ -76,6 +77,7 @@ export default function App() {
         <Route path="audit" element={<AuditLogs />} />
         <Route path="settings" element={<SystemSettings />} />
         <Route path="backups" element={<BackupManagement />} />
+        <Route path="walkin" element={<WalkinRequest />} />
         <Route path="verify/:hash?" element={<VerifyQR />} />
       </Route>
 

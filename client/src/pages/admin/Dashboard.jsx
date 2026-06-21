@@ -146,6 +146,25 @@ export default function Dashboard() {
     }
   };
 
+  const handleProcessExemption = async () => {
+    if (!selectedPaymentReq || !selectedReqObj) return;
+    setEncodingAction(true);
+    try {
+      const payorName = `${selectedReqObj.first_name} ${selectedReqObj.last_name}`;
+      await api.post(`/payments/exempt/${selectedPaymentReq}`, {
+        payor_name: payorName
+      });
+      showSnackbar("Document exempted from fee successfully under RA 11261.", "success");
+      setPaymentData({ or_number: '', amount_received: '' });
+      setSelectedPaymentReq('');
+      fetchDashboardData();
+    } catch (err) {
+      showSnackbar(err.response?.data?.message || "Exemption failed.", "error");
+    } finally {
+      setEncodingAction(false);
+    }
+  };
+
   const selectedReqObj = requestsForPayment.find(r => r.request_id === selectedPaymentReq);
   const amountDue = selectedReqObj ? Number(selectedReqObj.base_fee) : 0;
   const amountReceived = Number(paymentData.amount_received) || 0;
@@ -479,15 +498,39 @@ export default function Dashboard() {
                       </Paper>
                     )}
 
-                    <Button
-                      fullWidth
-                      type="submit"
-                      variant="contained"
-                      disabled={!isPaymentFormValid() || encodingAction}
-                      sx={{ py: 1.2, fontWeight: 'bold', borderRadius: 2, textTransform: 'none' }}
-                    >
-                      {encodingAction ? 'Encoding Payment...' : 'Record Payment Receipt'}
-                    </Button>
+                    {selectedReqObj && selectedReqObj.purpose && selectedReqObj.purpose.includes('[FIRST-TIME JOBSEEKER]') ? (
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          fullWidth
+                          variant="outlined"
+                          color="success"
+                          disabled={encodingAction}
+                          onClick={handleProcessExemption}
+                          sx={{ py: 1.2, fontWeight: 'bold', borderRadius: 2, textTransform: 'none' }}
+                        >
+                          {encodingAction ? 'Exempting...' : 'Exempt (RA 11261)'}
+                        </Button>
+                        <Button
+                          fullWidth
+                          type="submit"
+                          variant="contained"
+                          disabled={!isPaymentFormValid() || encodingAction}
+                          sx={{ py: 1.2, fontWeight: 'bold', borderRadius: 2, textTransform: 'none' }}
+                        >
+                          {encodingAction ? 'Processing...' : 'Pay Cash'}
+                        </Button>
+                      </Stack>
+                    ) : (
+                      <Button
+                        fullWidth
+                        type="submit"
+                        variant="contained"
+                        disabled={!isPaymentFormValid() || encodingAction}
+                        sx={{ py: 1.2, fontWeight: 'bold', borderRadius: 2, textTransform: 'none' }}
+                      >
+                        {encodingAction ? 'Encoding Payment...' : 'Record Payment Receipt'}
+                      </Button>
+                    )}
                   </Stack>
                 </form>
               )}
@@ -767,7 +810,12 @@ export default function Dashboard() {
                       <Grid container spacing={1.5}>
                         <Grid size={6}>
                           <Typography variant="caption" color="text.secondary" fontWeight="bold" display="block" textTransform="uppercase" sx={{ fontSize: '0.65rem' }}>Tracking Number</Typography>
-                          <Typography variant="body2" fontWeight="bold" color="#4f46e5" sx={{ fontSize: '0.78rem' }}>{selectedPendingReq.reference_no}</Typography>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            <Typography variant="body2" fontWeight="bold" color="#4f46e5" sx={{ fontSize: '0.78rem' }}>{selectedPendingReq.reference_no}</Typography>
+                            {selectedPendingReq.reference_no.startsWith('WLK-') && (
+                              <Chip label="WALK-IN" size="small" sx={{ bgcolor: '#e0f7fa', color: '#006064', fontWeight: 'bold', fontSize: '0.55rem', height: 14, borderRadius: '3px' }} />
+                            )}
+                          </Stack>
                         </Grid>
                         <Grid size={6}>
                           <Typography variant="caption" color="text.secondary" fontWeight="bold" display="block" textTransform="uppercase" sx={{ fontSize: '0.65rem' }}>Applicant</Typography>
@@ -775,7 +823,12 @@ export default function Dashboard() {
                         </Grid>
                         <Grid size={6}>
                           <Typography variant="caption" color="text.secondary" fontWeight="bold" display="block" textTransform="uppercase" sx={{ fontSize: '0.65rem' }}>Document & Fee</Typography>
-                          <Typography variant="body2" fontWeight="bold" color="text.primary" sx={{ fontSize: '0.78rem' }}>{selectedPendingReq.type_name} (₱{selectedPendingReq.base_fee})</Typography>
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold" color="text.primary" sx={{ fontSize: '0.78rem' }} display="inline">{selectedPendingReq.type_name} (₱{selectedPendingReq.base_fee})</Typography>
+                            {selectedPendingReq.purpose && selectedPendingReq.purpose.includes('[FIRST-TIME JOBSEEKER]') && (
+                              <Chip label="JOBSEEKER" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', fontSize: '0.55rem', height: 14, borderRadius: '3px', ml: 0.5 }} />
+                            )}
+                          </Box>
                         </Grid>
                         <Grid size={6}>
                           <Typography variant="caption" color="text.secondary" fontWeight="bold" display="block" textTransform="uppercase" sx={{ fontSize: '0.65rem' }}>Address</Typography>
@@ -994,9 +1047,23 @@ export default function Dashboard() {
                 ) : (
                   allRequests.slice(0, 6).map((row) => (
                     <TableRow key={row.request_id} hover>
-                      <TableCell sx={{ fontWeight: 'bold', color: '#4f46e5', py: 1.5, fontSize: '0.85rem' }}>{row.reference_no}</TableCell>
+                      <TableCell sx={{ py: 1.5 }}>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <span style={{ fontWeight: 'bold', color: '#4f46e5', fontSize: '0.85rem' }}>{row.reference_no}</span>
+                          {row.reference_no.startsWith('WLK-') && (
+                            <Chip label="WALK-IN" size="small" sx={{ bgcolor: '#e0f7fa', color: '#006064', fontWeight: 'bold', fontSize: '0.6rem', height: 16, borderRadius: '4px' }} />
+                          )}
+                        </Stack>
+                      </TableCell>
                       <TableCell sx={{ py: 1.5, fontSize: '0.85rem' }}>{row.first_name} {row.last_name}</TableCell>
-                      <TableCell sx={{ py: 1.5, fontSize: '0.85rem' }}>{row.type_name}</TableCell>
+                      <TableCell sx={{ py: 1.5 }}>
+                        <Box>
+                          <Typography variant="body2" sx={{ fontSize: '0.85rem' }} display="inline">{row.type_name}</Typography>
+                          {row.purpose && row.purpose.includes('[FIRST-TIME JOBSEEKER]') && (
+                            <Chip label="JOBSEEKER (RA 11261)" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', fontSize: '0.6rem', height: 16, borderRadius: '4px', ml: 0.5 }} />
+                          )}
+                        </Box>
+                      </TableCell>
                       <TableCell sx={{ py: 1.5 }}><Chip label={row.request_status} color={getStatusColor(row.request_status)} size="small" sx={{ fontWeight: 'bold', fontSize: '0.7rem' }} /></TableCell>
                       <TableCell align="center" sx={{ py: 1 }}>
                         {row.request_status === 'Pending' && (
@@ -1284,9 +1351,23 @@ export default function Dashboard() {
                   ) : (
                     recentRequests.map((req) => (
                       <TableRow key={req.request_id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                        <TableCell sx={{ fontWeight: 'bold', color: '#0f172a' }}>{req.reference_no}</TableCell>
+                        <TableCell sx={{ py: 1.5 }}>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            <span style={{ fontWeight: 'bold', color: '#0f172a' }}>{req.reference_no}</span>
+                            {req.reference_no.startsWith('WLK-') && (
+                              <Chip label="WALK-IN" size="small" sx={{ bgcolor: '#e0f7fa', color: '#006064', fontWeight: 'bold', fontSize: '0.6rem', height: 16, borderRadius: '4px' }} />
+                            )}
+                          </Stack>
+                        </TableCell>
                         <TableCell>{req.first_name} {req.last_name}</TableCell>
-                        <TableCell>{req.type_name}</TableCell>
+                        <TableCell sx={{ py: 1.5 }}>
+                          <Box>
+                            <Typography variant="body2" display="inline">{req.type_name}</Typography>
+                            {req.purpose && req.purpose.includes('[FIRST-TIME JOBSEEKER]') && (
+                              <Chip label="JOBSEEKER (RA 11261)" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 'bold', fontSize: '0.6rem', height: 16, borderRadius: '4px', ml: 0.5 }} />
+                            )}
+                          </Box>
+                        </TableCell>
                         <TableCell>
                           <Chip 
                             label={req.request_status} 
@@ -1311,6 +1392,15 @@ export default function Dashboard() {
               Quick Actions
             </Typography>
             <Stack spacing={2}>
+              <Button 
+                variant="outlined" 
+                color="primary" 
+                size="large"
+                sx={{ justifyContent: 'flex-start', py: 1.5, fontWeight: 'bold', borderRadius: 2 }}
+                onClick={() => navigate('/admin/walkin')}
+              >
+                📥 Create Walk-In Request
+              </Button>
               <Button 
                 variant="outlined" 
                 color="primary" 

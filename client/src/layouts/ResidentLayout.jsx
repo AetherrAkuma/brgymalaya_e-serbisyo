@@ -13,6 +13,7 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import PersonIcon from '@mui/icons-material/Person';
 import LogoutIcon from '@mui/icons-material/Logout';
 import QrCodeIcon from '@mui/icons-material/QrCode';
+import ForcePasswordChange from '../pages/resident/ForcePasswordChange';
 
 const drawerWidth = 260;
 
@@ -107,6 +108,7 @@ export default function ResidentLayout() {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+      <ForcePasswordChange />
       
       {/* TOP APP BAR (Only visible on Mobile to show the hamburger menu) */}
       <AppBar 
