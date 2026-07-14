@@ -79,7 +79,7 @@ export default function Register() {
         return consentChecked && residencyChecked;
       case 1:
         return (
-          formData.email_address.includes('@') &&
+          /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email_address) &&
           formData.password.length >= 8 &&
           formData.password === formData.confirmPassword
         );
@@ -142,7 +142,8 @@ export default function Register() {
         }
       });
 
-      setSuccess(response.data.message || 'Registration complete!');
+      setSuccess(response.data.message || 'Registration successful!');
+      const registeredEmail = formData.email_address.trim().toLowerCase();
       setFormData({
         email_address: '', password: '', confirmPassword: '',
         first_name: '', middle_name: '', last_name: '',
@@ -152,9 +153,9 @@ export default function Register() {
       setIdProofFile(null);
       setIdProofPreview(null);
       
-      // Auto redirect to login screen after 3.5s
+      // Redirect to verify-email page after 3.5s
       setTimeout(() => {
-        navigate('/login');
+        navigate(`/verify-email?email=${encodeURIComponent(registeredEmail)}`);
       }, 3500);
 
     } catch (err) {

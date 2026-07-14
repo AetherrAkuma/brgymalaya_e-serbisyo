@@ -19,6 +19,7 @@ const { generateBarangayPDF } = require('./utils/pdfGenerator');
 // Phase 8 Audit Logger
 const { logAction, logLogin, logStatusChange, logDocumentPrint, logPayment } = require('./utils/auditLogger');
 const { sendEmail } = require('./utils/emailSender');
+const { validateEmailFormat, isDisposableEmail, checkDomainMx } = require('./utils/emailValidator');
 const {
     generalLimiter,
     authLimiter,
@@ -39,6 +40,50 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
+
+function getPublicFrontendBaseUrl(req) {
+    const configuredBase = [
+        process.env.FRONTEND_BASE_URL,
+        process.env.PUBLIC_FRONTEND_URL,
+        process.env.PUBLIC_URL,
+        process.env.VERIFICATION_BASE_URL
+    ].find(value => typeof value === 'string' && value.trim());
+
+    if (configuredBase) {
+        try {
+            const parsed = new URL(configuredBase.trim());
+            return `${parsed.protocol}//${parsed.host}`;
+        } catch {
+            return configuredBase.trim().replace(/\/+$/, '').replace(/\/(verify|reset-password)$/i, '');
+        }
+    }
+
+    // Check forwarded headers first (set by Cloudflare tunnel / proxies)
+    const fwdProto = req.headers['x-forwarded-proto'];
+    const fwdHost = req.headers['x-forwarded-host'];
+    const p = Array.isArray(fwdProto) ? fwdProto[0] : fwdProto;
+    const h = Array.isArray(fwdHost) ? fwdHost[0] : fwdHost;
+    if (p && h) {
+        return `${p}://${h}`.replace(/\/+$/, '');
+    }
+
+    // Fall back to Origin/Referer from the request
+    const originHeader = req.headers.origin || req.headers.referer || '';
+    if (originHeader) {
+        try {
+            return new URL(originHeader).origin;
+        } catch {
+            // fall through to request host detection
+        }
+    }
+
+    // Final fallback using Host header
+    const fallbackProto = fwdProto || req.headers['x-forwarded-proto'] || 'http';
+    const fallbackHost = fwdHost || req.headers['x-forwarded-host'] || req.headers.host || 'localhost:5173';
+    const proto = Array.isArray(fallbackProto) ? fallbackProto[0] : fallbackProto;
+    const host = Array.isArray(fallbackHost) ? fallbackHost[0] : fallbackHost;
+    return `${proto}://${host}`.replace(/\/+$/, '');
+}
 
 // Safety Net Middleware for JSON Parsing Errors
 app.use((err, req, res, next) => {
@@ -272,7 +317,28 @@ app.post('/api/v1/auth/resident/register', registerLimiter, upload.single('id_pr
             return res.status(400).json({ error: 'Official ID proof image is required.' });
         }
 
-        const [existing] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email_address]);
+        // --- Email validation ---
+        const normalizedEmail = String(email_address || '').trim().toLowerCase();
+
+        if (!validateEmailFormat(normalizedEmail)) {
+            return res.status(400).json({ error: 'Please provide a valid email address.' });
+        }
+
+        const domain = normalizedEmail.split('@')[1];
+        if (isDisposableEmail(domain)) {
+            return res.status(400).json({ error: 'Temporary email addresses are not allowed. Please use a permanent email address.' });
+        }
+
+        try {
+            const hasMx = await checkDomainMx(domain);
+            if (!hasMx) {
+                return res.status(400).json({ error: 'The email domain does not appear to be valid.' });
+            }
+        } catch (mxError) {
+            console.warn('[EMAIL MX WARNING] Could not verify MX for domain:', domain, mxError.message);
+        }
+
+        const [existing] = await db.query('SELECT resident_id FROM tbl_Residents WHERE LOWER(TRIM(email_address)) = ?', [normalizedEmail]);
 
         if (existing && existing.length > 0) {
             return res.status(400).json({ status: 'error', message: 'Email address is already registered.' });
@@ -302,17 +368,140 @@ app.post('/api/v1/auth/resident/register', registerLimiter, upload.single('id_pr
 
         const [result] = await db.query(insertQuery, [
             first_name, middle_name || null, last_name, date_of_birth,
-            civil_status, address_street, email_address, encryptedContact, hashedPassword, savedFilename
+            civil_status, address_street, normalizedEmail, encryptedContact, hashedPassword, savedFilename
         ]);
+
+        // --- Generate verification token & send email ---
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const userAgent = req.headers['user-agent'] || 'Unknown';
+
+        await db.query(
+            'INSERT INTO tbl_EmailVerification (user_id, email, token_hash, ip_request, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))',
+            [result.insertId, normalizedEmail, tokenHash, ip, userAgent]
+        );
+
+        console.log('[REGISTER DEBUG] rawToken:', rawToken);
+        console.log('[REGISTER DEBUG] tokenHash:', tokenHash);
+        console.log('[REGISTER DEBUG] email:', normalizedEmail);
+        console.log('[REGISTER DEBUG] resident_id:', result.insertId);
+
+        const frontendBaseUrl = getPublicFrontendBaseUrl(req);
+        const verifyUrl = `${frontendBaseUrl}/verify-email?token=${rawToken}&email=${encodeURIComponent(normalizedEmail)}`;
+
+        const emailSubject = 'Verify Your E-Serbisyo Account';
+        const emailHtml = `
+            <h3>Welcome to E-Serbisyo Barangay Malaya!</h3>
+            <p>Thank you for registering, ${first_name}. Please click the button below to verify your email address:</p>
+            <p style="margin: 20px 0;">
+                <a href="${verifyUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Verify Email</a>
+            </p>
+            <p>This link is valid for 1 hour. If you did not register for E-Serbisyo, you can safely ignore this email.</p>
+            <br/>
+            <p>Best regards,<br/>E-Serbisyo Barangay Malaya Support</p>
+        `;
+
+        await sendEmail(normalizedEmail, emailSubject, emailHtml);
+
+        // Audit Log
+        await logAction({
+            user_id: result.insertId, user_type: 'Resident',
+            table_affected: 'tbl_Residents', record_id: result.insertId,
+            action_type: 'resident.register',
+            old_value: null, new_value: { first_name, last_name, email: normalizedEmail },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
 
         res.status(201).json({
             status: 'success',
-            message: 'Resident registered successfully. Your account is pending approval from Barangay Officials.',
+            message: 'Registration successful! A verification link has been sent to your email. Please check and verify within 1 hour.',
             resident_id: result.insertId
         });
 
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
+    }
+});
+
+// Endpoint: Verify Email
+app.post('/api/v1/auth/verify-email', async (req, res) => {
+    try {
+        const { token, email } = req.body;
+
+        if (!token || !email) {
+            return res.status(400).json({ error: 'Verification token and email are required.' });
+        }
+
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const tokenStr = String(token).trim();
+        const tokenHash = crypto.createHash('sha256').update(tokenStr).digest('hex');
+
+        // 1. Try to find an unverified record matching this token+email
+        let [records] = await db.query(
+            'SELECT verification_id FROM tbl_EmailVerification WHERE token_hash = ? AND email = ? AND is_verified = FALSE AND expires_at > NOW()',
+            [tokenHash, normalizedEmail]
+        );
+
+        if (records && records.length > 0) {
+            await db.query(
+                'UPDATE tbl_EmailVerification SET is_verified = TRUE, verified_at = NOW() WHERE verification_id = ?',
+                [records[0].verification_id]
+            );
+            return res.status(200).json({
+                status: 'success',
+                message: 'Email verified successfully! Your account is pending approval from Barangay Officials.',
+                verified: true,
+                already_verified: false
+            });
+        }
+
+        let [alreadyVerified] = await db.query(
+            'SELECT 1 FROM tbl_EmailVerification WHERE token_hash = ? AND email = ? AND is_verified = TRUE',
+            [tokenHash, normalizedEmail]
+        );
+
+        if (alreadyVerified && alreadyVerified.length > 0) {
+            return res.status(200).json({
+                status: 'success',
+                message: 'Email was already verified. Your account is pending approval from Barangay Officials.',
+                verified: true,
+                already_verified: true
+            });
+        }
+
+        return res.status(400).json({ error: 'Invalid or expired verification link. Please try registering again.', verified: false });
+
+    } catch (error) {
+        console.error('[VERIFY EMAIL ERROR]:', error);
+        res.status(500).json({ error: 'Internal server error during email verification.' });
+    }
+});
+
+// Endpoint: Check Verification Status (no token required — safe to refresh)
+app.get('/api/v1/auth/verify-status', async (req, res) => {
+    try {
+        const email = req.query.email;
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required.' });
+        }
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const [records] = await db.query(
+            'SELECT is_verified, expires_at FROM tbl_EmailVerification WHERE email = ? ORDER BY created_at DESC LIMIT 1',
+            [normalizedEmail]
+        );
+        if (records && records.length > 0) {
+            return res.json({
+                status: 'success',
+                verified: records[0].is_verified === 1 || records[0].is_verified === true,
+                expires_at: records[0].expires_at,
+                email: normalizedEmail
+            });
+        }
+        return res.json({ status: 'success', verified: false, email: normalizedEmail });
+    } catch (error) {
+        console.error('[VERIFY STATUS ERROR]:', error);
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -341,6 +530,8 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
             }
 
             await db.query('UPDATE tbl_BarangayOfficials SET last_login = NOW() WHERE user_id = ?', [official.user_id]);
+
+            await logLogin(official.user_id, 'Official', req.ip, req.headers['user-agent'], 'success');
 
             const token = generateToken({ id: official.user_id, role: official.role, username: official.username });
 
@@ -375,7 +566,7 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
                     try {
                         const [logs] = await db.query(
                             `SELECT new_value FROM tbl_AuditLogs
-                             WHERE table_affected = 'tbl_Residents' AND record_id = ? AND action_type = 'REJECT_REGISTRATION'
+                             WHERE table_affected = 'tbl_Residents' AND record_id = ? AND action_type = 'registration.reject'
                              ORDER BY timestamp DESC LIMIT 1`,
                             [resident.resident_id]
                         );
@@ -404,6 +595,8 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
             // Generate Token
             const token = generateToken({ id: resident.resident_id, role: 'Resident', email: resident.email_address });
 
+            await logLogin(resident.resident_id, 'Resident', req.ip, req.headers['user-agent'], 'success');
+
             return res.status(200).json({
                 status: 'success',
                 message: 'Resident login successful',
@@ -417,6 +610,14 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
         // ---------------------------------------------------------
         // 3. NO MATCH FOUND IN EITHER TABLE
         // ---------------------------------------------------------
+        await logAction({
+            user_id: 0, user_type: 'System',
+            table_affected: 'auth', record_id: null,
+            action_type: 'user.login', outcome: 'failure',
+            old_value: null, new_value: { attempted_credential: email_or_username },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         return res.status(401).json({ status: 'error', message: 'Invalid credentials. Please check your username/email and password.' });
 
     } catch (error) {
@@ -428,8 +629,10 @@ app.post('/api/v1/auth/login', authLimiter, async (req, res) => {
 // Endpoint: Forgot Password
 app.post('/api/v1/auth/forgot-password', passwordResetLimiter, async (req, res) => {
     try {
-        const { email } = req.body;
-        if (!email) {
+        const rawEmail = req.body?.email;
+        const normalizedEmail = String(rawEmail || '').trim().toLowerCase();
+
+        if (!normalizedEmail) {
             return res.status(400).json({ error: 'Email address is required.' });
         }
 
@@ -437,15 +640,15 @@ app.post('/api/v1/auth/forgot-password', passwordResetLimiter, async (req, res) 
         let firstName = '';
         let isResident = false;
 
-        // 1. Check if resident exists
-        const [residents] = await db.query('SELECT resident_id, first_name FROM tbl_Residents WHERE email_address = ? AND account_status = "Active"', [email]);
+        // 1. Check if resident exists (allow password resets for existing accounts even if pending)
+        const [residents] = await db.query('SELECT resident_id, first_name FROM tbl_Residents WHERE LOWER(TRIM(email_address)) = ?', [normalizedEmail]);
         if (residents.length > 0) {
             userId = residents[0].resident_id;
             firstName = residents[0].first_name;
             isResident = true;
         } else {
             // 2. Check if official exists
-            const [officials] = await db.query('SELECT user_id, full_name FROM tbl_BarangayOfficials WHERE email_official = ? AND account_status = "Active"', [email]);
+            const [officials] = await db.query('SELECT user_id, full_name FROM tbl_BarangayOfficials WHERE LOWER(TRIM(email_official)) = ?', [normalizedEmail]);
             if (officials.length > 0) {
                 userId = officials[0].user_id;
                 firstName = officials[0].full_name.split(' ')[0]; // Use first name
@@ -466,12 +669,12 @@ app.post('/api/v1/auth/forgot-password', passwordResetLimiter, async (req, res) 
         const userAgent = req.headers['user-agent'] || 'Unknown';
         await db.query(
             'INSERT INTO tbl_PasswordReset (user_id, token_hash, email, ip_request, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))',
-            [userId, tokenHash, email, ip, userAgent]
+            [userId, tokenHash, normalizedEmail, ip, userAgent]
         );
 
-        // 5. Construct Reset URL using VERIFICATION_BASE_URL (removing /verify subpath if it exists)
-        const baseUrl = (process.env.VERIFICATION_BASE_URL || 'http://localhost:5173/verify').replace('/verify', '');
-        const resetUrl = `${baseUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(email)}`;
+        // 5. Construct Reset URL using the actual frontend origin when available
+        const frontendBaseUrl = getPublicFrontendBaseUrl(req);
+        const resetUrl = `${frontendBaseUrl}/reset-password?token=${rawToken}&email=${encodeURIComponent(normalizedEmail)}`;
 
         // 6. Send email
         const emailSubject = 'Reset Your E-Serbisyo Account Password';
@@ -487,7 +690,15 @@ app.post('/api/v1/auth/forgot-password', passwordResetLimiter, async (req, res) 
             <p>Best regards,<br/>E-Serbisyo Barangay Malaya Support</p>
         `;
 
-        await sendEmail(email, emailSubject, emailHtml);
+        await sendEmail(normalizedEmail, emailSubject, emailHtml);
+
+        await logAction({
+            user_id: userId, user_type: 'System',
+            table_affected: 'auth', record_id: null,
+            action_type: 'user.forgot_password',
+            old_value: null, new_value: { email: normalizedEmail, is_resident: isResident },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
 
         res.status(200).json({ status: 'success', message: 'If the account exists, a password reset link has been sent to your email.' });
     } catch (error) {
@@ -500,7 +711,9 @@ app.post('/api/v1/auth/forgot-password', passwordResetLimiter, async (req, res) 
 app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) => {
     try {
         const { email, token, new_password } = req.body;
-        if (!email || !token || !new_password) {
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+
+        if (!normalizedEmail || !token || !new_password) {
             return res.status(400).json({ error: 'Email, reset token, and new password are required.' });
         }
 
@@ -515,19 +728,19 @@ app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) =
         // 2. Query tbl_PasswordReset
         const [resets] = await db.query(
             'SELECT * FROM tbl_PasswordReset WHERE email = ? AND token_hash = ? AND is_used = FALSE AND expires_at > NOW() LIMIT 1',
-            [email, tokenHash]
+            [normalizedEmail, tokenHash]
         );
 
         if (resets.length === 0) {
             // Increment attempt_count on all valid tokens for this email on mismatch
             await db.query(
                 'UPDATE tbl_PasswordReset SET attempt_count = attempt_count + 1 WHERE email = ? AND is_used = FALSE AND expires_at > NOW()',
-                [email]
+                [normalizedEmail]
             );
             // Auto-invalidate tokens that have exceeded the attempt threshold
             await db.query(
                 'UPDATE tbl_PasswordReset SET is_used = TRUE WHERE email = ? AND attempt_count >= 5 AND is_used = FALSE',
-                [email]
+                [normalizedEmail]
             );
             return res.status(400).json({ error: 'Invalid or expired password reset link.' });
         }
@@ -544,13 +757,13 @@ app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) =
         const hashedPassword = hashPassword(new_password);
 
         // 5. Update the user password in appropriate table
-        const [residents] = await db.query('SELECT resident_id FROM tbl_Residents WHERE email_address = ?', [email]);
+        const [residents] = await db.query('SELECT resident_id FROM tbl_Residents WHERE LOWER(TRIM(email_address)) = ?', [normalizedEmail]);
         if (residents.length > 0) {
-            await db.query('UPDATE tbl_Residents SET password_hash = ?, require_password_change = 0 WHERE email_address = ?', [hashedPassword, email]);
+            await db.query('UPDATE tbl_Residents SET password_hash = ?, require_password_change = 0 WHERE LOWER(TRIM(email_address)) = ?', [hashedPassword, normalizedEmail]);
         } else {
-            const [officials] = await db.query('SELECT user_id FROM tbl_BarangayOfficials WHERE email_official = ?', [email]);
+            const [officials] = await db.query('SELECT user_id FROM tbl_BarangayOfficials WHERE LOWER(TRIM(email_official)) = ?', [normalizedEmail]);
             if (officials.length > 0) {
-                await db.query('UPDATE tbl_BarangayOfficials SET password_hash = ?, require_password_change = 0 WHERE email_official = ?', [hashedPassword, email]);
+                await db.query('UPDATE tbl_BarangayOfficials SET password_hash = ?, require_password_change = 0 WHERE LOWER(TRIM(email_official)) = ?', [hashedPassword, normalizedEmail]);
             } else {
                 return res.status(400).json({ error: 'User account not found.' });
             }
@@ -558,6 +771,14 @@ app.post('/api/v1/auth/reset-password', passwordResetLimiter, async (req, res) =
 
         // 6. Mark the token as used
         await db.query('UPDATE tbl_PasswordReset SET is_used = TRUE WHERE reset_id = ?', [resetRecord.reset_id]);
+
+        await logAction({
+            user_id: resetRecord.user_id, user_type: 'System',
+            table_affected: 'auth', record_id: resetRecord.reset_id,
+            action_type: 'user.password_reset',
+            old_value: null, new_value: { email: normalizedEmail },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
 
         res.status(200).json({ status: 'success', message: 'Password has been reset successfully. You can now log in.' });
     } catch (error) {
@@ -692,6 +913,15 @@ app.put('/api/v1/admin/settings/:setting_key', verifyJWT, roleGuard(['Captain'])
             return res.status(404).json({ error: 'Setting key not found.' });
         }
 
+        // Audit Log
+        await logAction({
+            user_id: req.user.id, user_type: 'Official',
+            table_affected: 'tbl_SystemSettings', record_id: null,
+            action_type: 'system.settings_update',
+            old_value: null, new_value: { setting_key, setting_value },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         res.status(200).json({ status: 'success', message: `Setting '${setting_key}' updated successfully.` });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
@@ -711,10 +941,19 @@ app.post('/api/v1/admin/document-types', verifyJWT, roleGuard(['Captain', 'Secre
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
 
-        await db.query(insertQuery, [
+        const [insertResult] = await db.query(insertQuery, [
             type_name, description || null, base_fee || 0.00, requirements || null,
             validity_days || 180, is_available !== undefined ? is_available : true, req.user.id
         ]);
+
+        // Audit Log
+        await logAction({
+            user_id: req.user.id, user_type: 'Official',
+            table_affected: 'tbl_DocumentTypes', record_id: insertResult.insertId,
+            action_type: 'document_type.create',
+            old_value: null, new_value: { type_name, base_fee },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
 
         res.status(201).json({ status: 'success', message: 'Document type created successfully.' });
     } catch (error) {
@@ -751,6 +990,15 @@ app.put('/api/v1/admin/document-types/:id', verifyJWT, roleGuard(['Captain', 'Se
 
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Document type not found.' });
 
+        // Audit Log
+        await logAction({
+            user_id: req.user.id, user_type: 'Official',
+            table_affected: 'tbl_DocumentTypes', record_id: Number(id),
+            action_type: 'document_type.update',
+            old_value: null, new_value: { type_name, base_fee, is_available },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         res.status(200).json({ status: 'success', message: 'Document type updated successfully.' });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
@@ -771,6 +1019,15 @@ app.put('/api/v1/admin/document-types/:id/layout', verifyJWT, roleGuard(['Captai
         const [result] = await db.query('UPDATE tbl_DocumentTypes SET layout_config = ? WHERE doc_type_id = ?', [configString, id]);
 
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Document type not found.' });
+
+        await logAction({
+            user_id: req.user.id, user_type: 'Official',
+            table_affected: 'tbl_DocumentTypes', record_id: Number(id),
+            action_type: 'document_type.layout_update',
+            old_value: null, new_value: { layout_config: configString },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         res.status(200).json({ status: 'success', message: 'Layout configuration updated successfully.' });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
@@ -827,11 +1084,20 @@ app.post('/api/v1/admin/announcements', verifyJWT, roleGuard(['Captain', 'Admin'
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
 
-        await db.query(insertQuery, [
+        const [annResult] = await db.query(insertQuery, [
             title, content_body, target_audience || 'All',
             is_pinned ? 1 : 0, finalStatus,
             expiry_date || null, image_path || null, posted_by
         ]);
+
+        // Audit Log
+        await logAction({
+            user_id: posted_by, user_type: 'Official',
+            table_affected: 'tbl_Announcements', record_id: annResult.insertId,
+            action_type: 'announcement.create',
+            old_value: null, new_value: { title, status: finalStatus },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
 
         const msg = finalStatus === 'Pending Approval'
             ? 'Announcement submitted for approval. It will be published once reviewed.'
@@ -885,8 +1151,9 @@ app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Adm
             if (userRole !== 'Admin' && status === 'Published' && announcement.status === 'Pending Approval') {
                 await logAction({
                     user_id: userId, user_type: 'Official', table_affected: 'tbl_Announcements',
-                    record_id: id, action_type: 'APPROVE_ANNOUNCEMENT',
-                    old_value: { status: announcement.status }, new_value: { status: 'Published' }
+                    record_id: id, action_type: 'announcement.approve',
+                    old_value: { status: announcement.status }, new_value: { status: 'Published' },
+                    ip_address: req.ip, user_agent: req.headers['user-agent']
                 });
             }
 
@@ -909,9 +1176,10 @@ app.put('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Adm
                 // Store rejection reason in Audit Log (new_value JSON) — zero schema changes
                 await logAction({
                     user_id: userId, user_type: 'Official', table_affected: 'tbl_Announcements',
-                    record_id: id, action_type: 'REJECT_ANNOUNCEMENT',
+                    record_id: id, action_type: 'announcement.reject',
                     old_value: { status: announcement.status },
-                    new_value: { status: 'Draft', rejection_reason }
+                    new_value: { status: 'Draft', rejection_reason },
+                    ip_address: req.ip, user_agent: req.headers['user-agent']
                 });
             }
         } else {
@@ -936,7 +1204,7 @@ app.get('/api/v1/admin/announcements/:id/rejection-reason', verifyJWT, roleGuard
         const { id } = req.params;
         const [logs] = await db.query(
             `SELECT new_value FROM tbl_AuditLogs
-             WHERE table_affected = 'tbl_Announcements' AND record_id = ? AND action_type = 'REJECT_ANNOUNCEMENT'
+             WHERE table_affected = 'tbl_Announcements' AND record_id = ? AND action_type = 'announcement.reject'
              ORDER BY timestamp DESC LIMIT 1`,
             [id]
         );
@@ -952,9 +1220,19 @@ app.get('/api/v1/admin/announcements/:id/rejection-reason', verifyJWT, roleGuard
 app.delete('/api/v1/admin/announcements/:id', verifyJWT, roleGuard(['Captain', 'Admin']), async (req, res) => {
     try {
         const { id } = req.params;
-        // Fetch image_path before deleting so we can clean up the file
-        const [rows] = await db.query('SELECT image_path FROM tbl_announcements WHERE announcement_id = ?', [id]);
-        if (rows.length > 0) deleteAnnouncementImage(rows[0].image_path);
+        // Fetch details before deleting so we can log them
+        const [rows] = await db.query('SELECT title, image_path FROM tbl_announcements WHERE announcement_id = ?', [id]);
+        if (rows.length === 0) return res.status(404).json({ error: 'Announcement not found.' });
+        deleteAnnouncementImage(rows[0].image_path);
+
+        await logAction({
+            user_id: req.user.id, user_type: 'Official',
+            table_affected: 'tbl_Announcements', record_id: Number(id),
+            action_type: 'announcement.delete',
+            old_value: { title: rows[0].title }, new_value: null,
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         await db.query('DELETE FROM tbl_announcements WHERE announcement_id = ?', [id]);
         res.status(200).json({ status: 'success', message: 'Announcement deleted.' });
     } catch (error) {
@@ -998,6 +1276,15 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Admin', 'Ca
 
         if (result.affectedRows === 0) return res.status(404).json({ error: 'Resident not found.' });
 
+        // Audit Log
+        await logAction({
+            user_id: req.user.id, user_type: 'Official',
+            table_affected: 'tbl_Residents', record_id: Number(id),
+            action_type: 'resident.status_change',
+            old_value: null, new_value: { account_status },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         res.status(200).json({ status: 'success', message: `Resident account successfully marked as ${account_status}.` });
     } catch (error) {
         res.status(500).json({ status: 'error', message: error.message });
@@ -1006,7 +1293,7 @@ app.put('/api/v1/admin/residents/:id/status', verifyJWT, roleGuard(['Admin', 'Ca
 
 // Endpoint 20.6: Reject Resident Registration (Admin/Captain/Secretary)
 // NOTE: rejection_reason is NOT stored in tbl_Residents column (not in PDF schema).
-// It is stored in tbl_AuditLogs.new_value JSON (action_type: 'REJECT_REGISTRATION').
+// It is stored in tbl_AuditLogs.new_value JSON (action_type: 'registration.reject').
 app.put('/api/v1/admin/residents/:id/reject', verifyJWT, roleGuard(['Admin', 'Captain', 'Secretary']), async (req, res) => {
     try {
         const { id } = req.params;
@@ -1038,9 +1325,10 @@ app.put('/api/v1/admin/residents/:id/reject', verifyJWT, roleGuard(['Admin', 'Ca
         // Store rejection reason in the Audit Log (new_value JSON) — zero schema changes
         await logAction({
             user_id: userId, user_type: 'Official', table_affected: 'tbl_Residents',
-            record_id: id, action_type: 'REJECT_REGISTRATION',
+            record_id: id, action_type: 'registration.reject',
             old_value: { account_status: 'Pending' },
-            new_value: { account_status: 'Blocked', rejection_reason }
+            new_value: { account_status: 'Blocked', rejection_reason },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
         });
 
         res.status(200).json({ status: 'success', message: 'Registration rejected. Resident has been notified.' });
@@ -1055,7 +1343,7 @@ app.get('/api/v1/admin/residents/:id/rejection-reason', verifyJWT, roleGuard(['A
         const { id } = req.params;
         const [logs] = await db.query(
             `SELECT new_value FROM tbl_AuditLogs
-             WHERE table_affected = 'tbl_Residents' AND record_id = ? AND action_type = 'REJECT_REGISTRATION'
+             WHERE table_affected = 'tbl_Residents' AND record_id = ? AND action_type = 'registration.reject'
              ORDER BY timestamp DESC LIMIT 1`,
             [id]
         );
@@ -1155,6 +1443,14 @@ app.post('/api/v1/requests', verifyJWT, roleGuard(['Resident']), requestCreation
             VALUES (?, ?, ?, ?, 'Pending')
         `;
         const [result] = await db.query(insertQuery, [resident_id, doc_type_id, reference_no, purpose]);
+
+        await logAction({
+            user_id: resident_id, user_type: 'Resident',
+            table_affected: 'tbl_Requests', record_id: Number(result.insertId),
+            action_type: 'request.create',
+            old_value: null, new_value: { reference_no, doc_type_id, purpose },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
 
         res.status(201).json({
             status: 'success',
@@ -1575,6 +1871,14 @@ app.put('/api/v1/residents/me/password', verifyJWT, roleGuard(['Resident']), asy
             [hashedNew, residentId]
         );
 
+        await logAction({
+            user_id: residentId, user_type: 'Resident',
+            table_affected: 'tbl_Residents', record_id: residentId,
+            action_type: 'user.password_change',
+            old_value: null, new_value: { changed_at: new Date().toISOString() },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         res.status(200).json({ status: 'success', message: 'Password updated successfully and account secured.' });
     } catch (error) {
         console.error("RESIDENT PASSWORD UPDATE ERROR:", error.message);
@@ -1839,18 +2143,18 @@ app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer
     try {
         const { request_id } = req.params;
         const treasurer_id = req.user.id;
-        const { payor_name } = req.body; // usually the resident's name
+        const { payor_name, or_number } = req.body;
 
         if (!payor_name) return res.status(400).json({ error: 'payor_name is required for the audit log.' });
+        if (!or_number || !or_number.trim()) return res.status(400).json({ error: 'or_number is required.' });
 
-        // Generate a pseudo OR number for exempted logs
-        const pseudo_or = `EXEMPT-${Date.now()}`;
+        const finalOr = or_number.trim();
 
         const insertPaymentQuery = `
             INSERT INTO tbl_Payments (request_id, amount_paid, or_number, treasurer_id, payment_status, payor_name)
             VALUES (?, 0.00, ?, ?, 'Exempted', ?)
         `;
-        await db.query(insertPaymentQuery, [request_id, pseudo_or, treasurer_id, payor_name]);
+        await db.query(insertPaymentQuery, [request_id, finalOr, treasurer_id, payor_name]);
 
         const updateRequestQuery = `
             UPDATE tbl_Requests 
@@ -1860,7 +2164,7 @@ app.post('/api/v1/payments/exempt/:request_id', verifyJWT, roleGuard(['Treasurer
         await db.query(updateRequestQuery, [request_id]);
 
         // Audit Logging
-        await logPayment(treasurer_id, 'Official', request_id, 0.00, pseudo_or, req.ip);
+        await logPayment(treasurer_id, 'Official', request_id, 0.00, finalOr, req.ip);
         await logStatusChange(treasurer_id, 'Official', 'tbl_Requests', request_id, 'For Payment', 'Processing', req.ip);
 
         // Fetch request and resident details for email
@@ -2028,6 +2332,14 @@ app.post('/api/v1/admin/signatures/upload', verifyJWT, roleGuard(['Captain']), e
             ON DUPLICATE KEY UPDATE signature_blob = VALUES(signature_blob), uploaded_at = NOW()
         `, [req.user.id, filename]);
 
+        await logAction({
+            user_id: req.user.id, user_type: 'Official',
+            table_affected: 'tbl_DigitalSignatures', record_id: req.user.id,
+            action_type: 'document.signature_upload',
+            old_value: null, new_value: { filename },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         res.status(200).json({ status: 'success', message: 'Digital signature securely vaulted.', filename });
     } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
@@ -2162,6 +2474,14 @@ app.post('/api/v1/admin/document-types/:id/template', verifyJWT, roleGuard(['Cap
             [savedFilename, req.user.id, id]
         );
 
+        await logAction({
+            user_id: req.user.id, user_type: 'Official',
+            table_affected: 'tbl_DocumentTypes', record_id: Number(id),
+            action_type: 'document_type.template_upload',
+            old_value: null, new_value: { filename: savedFilename },
+            ip_address: req.ip, user_agent: req.headers['user-agent']
+        });
+
         res.status(200).json({
             status: 'success',
             message: 'Document template uploaded and encrypted successfully.',
@@ -2224,38 +2544,47 @@ app.post('/api/v1/admin/document-types/:id/test-pdf', verifyJWT, roleGuard(['Cap
 app.get('/api/v1/public/verify/:qr_hash', async (req, res) => {
     try {
         const { qr_hash } = req.params;
+        const normalizedInput = String(qr_hash || '').trim();
         const query = `
             SELECT r.reference_no, r.request_status, r.date_requested, dt.type_name, res.first_name, res.last_name, r.pickup_date
             FROM tbl_Requests r
             JOIN tbl_Residents res ON r.resident_id = res.resident_id
             JOIN tbl_DocumentTypes dt ON r.doc_type_id = dt.doc_type_id
-            WHERE r.qr_code_string = ?
+            WHERE r.qr_code_string = ? OR r.reference_no = ?
         `;
-        const [rows] = await db.query(query, [qr_hash]);
+        const [rows] = await db.query(query, [normalizedInput, normalizedInput]);
 
         if (rows.length === 0) {
             return res.status(200).json({ status: 'invalid', message: 'This document record was not found or may be a forgery.' });
         }
 
         const doc = rows[0];
-        const allowedStatuses = ['Issued', 'Ready for Pickup', 'Processing'];
-        const isValid = allowedStatuses.includes(doc.request_status);
+        const activeStatuses = ['Pending', 'For Verification', 'For Payment', 'Processing', 'Ready for Pickup', 'Issued'];
+        const isValid = activeStatuses.includes(doc.request_status);
 
-        let message = 'This is an authentic Barangay Document.';
-        if (doc.request_status === 'Processing') {
+        let message = 'This document request has been recorded and is currently under review.';
+        if (doc.request_status === 'For Verification') {
+            message = 'This document request has been recorded and is currently being verified.';
+        } else if (doc.request_status === 'For Payment') {
+            message = 'This document request has been recorded and is awaiting payment clearance.';
+        } else if (doc.request_status === 'Processing') {
             message = 'This document has been generated and is currently in processing.';
         } else if (doc.request_status === 'Ready for Pickup') {
             message = 'This document is authentic and is ready for pickup at the Barangay Hall.';
+        } else if (doc.request_status === 'Issued') {
+            message = 'This is an authentic Barangay Document.';
         }
+
+        const issuedOn = doc.request_status === 'Issued' ? doc.pickup_date : null;
 
         res.status(200).json({
             status: isValid ? 'Valid' : 'Revoked/Invalid',
-            message: isValid ? message : 'This document is no longer valid or has not been officially issued.',
+            message: isValid ? message : 'This request was cancelled or rejected and is no longer valid.',
             details: {
                 reference: doc.reference_no,
                 document: doc.type_name,
                 owner: `${doc.first_name} ${doc.last_name}`,
-                issued_on: doc.pickup_date,
+                issued_on: issuedOn,
                 requested_on: doc.date_requested,
                 status: doc.request_status
             }
@@ -2311,10 +2640,11 @@ app.post('/api/v1/admin/officials', verifyJWT, roleGuard(['Captain']), async (re
             user_type: 'Official',
             table_affected: 'tbl_BarangayOfficials',
             record_id: result.insertId,
-            action_type: 'CREATE',
+            action_type: 'official.create',
             old_value: null,
             new_value: { official_id, username, role },
-            ip_address: req.ip
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent']
         });
 
         res.status(201).json({
@@ -2365,10 +2695,11 @@ app.put('/api/v1/admin/officials/:id/status', verifyJWT, roleGuard(['Captain']),
             user_type: 'Official',
             table_affected: 'tbl_BarangayOfficials',
             record_id: id,
-            action_type: 'STATUS_CHANGE',
+            action_type: 'official.status_change',
             old_value: { account_status: current[0].account_status },
             new_value: { account_status },
-            ip_address: req.ip
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent']
         });
 
         res.status(200).json({
@@ -2392,7 +2723,7 @@ app.get('/api/v1/admin/audit-logs', verifyJWT, roleGuard(['Captain']), async (re
         const query = `
             SELECT 
                 a.log_id, a.user_id, a.user_type, a.table_affected, a.record_id, 
-                a.action_type, a.old_value, a.new_value, a.timestamp, a.ip_address,
+                a.action_type, a.outcome, a.old_value, a.new_value, a.timestamp, a.ip_address, a.user_agent,
                 o.full_name as official_name, o.role as official_role,
                 r.first_name as res_first, r.last_name as res_last
             FROM tbl_AuditLogs a
@@ -2441,13 +2772,13 @@ app.delete('/api/v1/admin/officials/:id', verifyJWT, roleGuard(['Captain']), asy
             user_type: 'Official',
             table_affected: 'tbl_BarangayOfficials',
             record_id: id,
-            action_type: 'DELETE',
+            action_type: 'official.delete',
             old_value: { username: target[0].username, role: target[0].role },
             new_value: null,
-            ip_address: req.ip
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent']
         });
 
-        // Permanently remove from tbl_BarangayOfficials
         await db.query('DELETE FROM tbl_BarangayOfficials WHERE user_id = ?', [id]);
 
         res.status(200).json({ status: 'success', message: 'Official account permanently removed.' });
@@ -2497,10 +2828,11 @@ app.post('/api/v1/admin/backups/create', verifyJWT, roleGuard(['Captain']), asyn
             user_type: 'Official',
             table_affected: 'tbl_SystemSettings',
             record_id: null,
-            action_type: 'BACKUP_CREATED',
+            action_type: 'system.backup',
             old_value: null,
             new_value: { filename: result.filename },
-            ip_address: req.ip
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent']
         });
 
         res.status(201).json({ status: 'success', message: 'Backup created successfully.', filename: result.filename });
@@ -2535,10 +2867,11 @@ app.post('/api/v1/admin/backups/restore/:filename', verifyJWT, roleGuard(['Capta
             user_type: 'Official',
             table_affected: 'tbl_SystemSettings',
             record_id: null,
-            action_type: 'SYSTEM_RESTORED',
+            action_type: 'system.restore',
             old_value: null,
             new_value: { restored_from: filename },
-            ip_address: req.ip
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent']
         });
 
         res.status(200).json({ status: 'success', message: 'System database and files successfully restored.' });
@@ -2564,10 +2897,11 @@ app.delete('/api/v1/admin/backups/:filename', verifyJWT, roleGuard(['Captain']),
             user_type: 'Official',
             table_affected: 'tbl_SystemSettings',
             record_id: null,
-            action_type: 'BACKUP_DELETED',
+            action_type: 'system.backup_delete',
             old_value: null,
             new_value: { filename },
-            ip_address: req.ip
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent']
         });
 
         res.status(200).json({ status: 'success', message: 'Backup file deleted successfully.' });
@@ -2629,7 +2963,7 @@ if (shouldRunCron) {
                         await db.query("UPDATE tbl_Residents SET id_proof_image = NULL WHERE resident_id = ?", [resident.resident_id]);
                         await logAction({
                             user_id: 0, user_type: 'System', table_affected: 'tbl_Residents',
-                            record_id: resident.resident_id, action_type: 'AUTO_DELETE_ID_PROOF',
+                            record_id: resident.resident_id, action_type: 'document.auto_delete_id_proof',
                             old_value: { id_proof_image: resident.id_proof_image }, new_value: { id_proof_image: null }
                         });
                         console.log(`[AUTO-DELETE] Deleted ID proof for resident ${resident.resident_id}`);
@@ -2732,10 +3066,11 @@ app.post('/api/v1/admin/residents/quick-register', verifyJWT, roleGuard(['Admin'
             user_type: 'Official',
             table_affected: 'tbl_Residents',
             record_id: result.insertId,
-            action_type: 'QUICK_REGISTER_RESIDENT',
+            action_type: 'resident.quick_register',
             old_value: null,
             new_value: { first_name, last_name, email_address },
-            ip_address: req.ip
+            ip_address: req.ip,
+            user_agent: req.headers['user-agent']
         });
 
         res.status(201).json({

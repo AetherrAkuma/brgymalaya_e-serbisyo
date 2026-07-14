@@ -133,15 +133,36 @@ CREATE TABLE IF NOT EXISTS tbl_AuditLogs (
     user_id INT NOT NULL, -- Intentionally left without strict FK to support both Residents and Officials
     table_affected VARCHAR(100),
     record_id INT,
-    action_type VARCHAR(100) NOT NULL,
+    action_type VARCHAR(100) NOT NULL, -- Standardised dot-notation, e.g. user.login, document.status_change
+    outcome ENUM('success', 'failure') NOT NULL DEFAULT 'success',
     old_value JSON,
     new_value JSON,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     ip_address VARCHAR(45),
-    user_type ENUM('Resident', 'Official', 'System') NOT NULL
+    user_agent TEXT,
+    user_type ENUM('Resident', 'Official', 'System') NOT NULL,
+    INDEX idx_timestamp (timestamp),
+    INDEX idx_action (action_type),
+    INDEX idx_outcome (outcome)
 );
 
--- 10. Password Resets
+-- 10a. Email Verification
+CREATE TABLE IF NOT EXISTS tbl_EmailVerification (
+    verification_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    token_hash VARCHAR(255) NOT NULL,
+    ip_request VARCHAR(45),
+    user_agent TEXT,
+    expires_at DATETIME NOT NULL,
+    is_verified BOOLEAN DEFAULT FALSE,
+    verified_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (email),
+    INDEX (token_hash)
+);
+
+-- 10b. Password Resets
 CREATE TABLE IF NOT EXISTS tbl_PasswordReset (
     reset_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL, -- Can map to Resident or Official

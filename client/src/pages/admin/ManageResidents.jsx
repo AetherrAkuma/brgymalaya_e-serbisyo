@@ -251,7 +251,7 @@ export default function ManageResidents() {
               <Grid container sx={{ minHeight: 400 }}>
                 
                 {/* Left Side: Profile Information */}
-                <Grid item xs={12} md={5} sx={{ p: 3, borderRight: '1px solid #ddd', bgcolor: '#fafafa' }}>
+                <Grid size={{ xs: 12, md: 5 }} sx={{ p: 3, borderRight: '1px solid #ddd', bgcolor: '#fafafa' }}>
                   <Typography variant="overline" color="text.secondary" fontWeight="bold">Personal Information</Typography>
                   <Typography variant="h6" fontWeight="bold" gutterBottom>
                     {selectedUser.first_name} {selectedUser.middle_name || ''} {selectedUser.last_name}
@@ -270,7 +270,7 @@ export default function ManageResidents() {
                 </Grid>
 
                 {/* Right Side: Secure ID Viewer */}
-                <Grid item xs={12} md={7} sx={{ bgcolor: '#2c3e50', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+                <Grid size={{ xs: 12, md: 7 }} sx={{ bgcolor: '#2c3e50', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2 }}>
                   <Typography variant="overline" color="white" sx={{ mb: 1, opacity: 0.7 }}>Secure ID Vault</Typography>
                   
                   {selectedUser.id_proof_image ? (

@@ -1,8 +1,22 @@
 $ErrorActionPreference = "SilentlyContinue"
 
+# ─── Auto-elevate to Admin (needed for hosts file DNS fix) ──────────────────
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "[!] This script needs Administrator privileges to fix tunnel DNS resolution." -ForegroundColor Yellow
+    Write-Host "[!] Restarting as Administrator..." -ForegroundColor Yellow
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "powershell.exe"
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"" + $MyInvocation.MyCommand.Path + "`""
+    $psi.Verb = "runas"
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    if ($proc) { Start-Sleep -Seconds 2; Exit } else { Write-Host "[-] Failed to elevate. Run the script as Administrator manually." -ForegroundColor Red }
+}
+
 # ─── CONFIG ─────────────────────────────────────────────────────────────────
 # ─── Locate cloudflared.exe (ONLY accept/search root folder, auto-download if missing) ───
-$cloudflared = Join-Path (Get-Location).Path "cloudflared.exe"
+$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$cloudflared = Join-Path $projectRoot "cloudflared.exe"
+$nodeDir = try { (Get-Command node).Source | Split-Path } catch { "C:\Program Files\nodejs" }
 
 if (-not (Test-Path $cloudflared)) {
     Write-Host "" 
@@ -77,6 +91,38 @@ if (-not (Test-Path $cloudflared)) {
     Write-Host ""
 }
 
+function Set-EnvFileValue {
+    param(
+        [string]$FilePath,
+        [string]$Key,
+        [string]$Value
+    )
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+
+    if (-not (Test-Path $FilePath)) {
+        [System.IO.File]::WriteAllLines($FilePath, @("$Key=$Value"), $utf8NoBom)
+        return
+    }
+
+    $lines = [System.IO.File]::ReadAllLines($FilePath, [System.Text.Encoding]::UTF8)
+    $updated = $false
+
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match "^\s*$([regex]::Escape($Key))\s*=") {
+            $lines[$i] = "$Key=$Value"
+            $updated = $true
+            break
+        }
+    }
+
+    if (-not $updated) {
+        $lines += "$Key=$Value"
+    }
+
+    [System.IO.File]::WriteAllLines($FilePath, $lines, $utf8NoBom)
+}
+
 Clear-Host
 Write-Host "====================================================" -ForegroundColor Cyan
 Write-Host "   E-SERBISYO SYSTEM START (Cloudflare Tunnel)" -ForegroundColor Cyan
@@ -87,17 +133,13 @@ Write-Host "[*] Stopping existing processes..." -ForegroundColor Gray
 Stop-Process -Name "node","cloudflared" -Force 2>$null
 Start-Sleep -Seconds 1
 
-# 2. Start Backend
-Write-Host "[*] Starting Backend (Port 3000)..." -ForegroundColor Gray
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle='Express API'; `$env:PORT='3000'; `$env:RUN_CRON='true'; npx nodemon server.js" -WorkingDirectory "server" -WindowStyle Minimized
-
-# 3. Start Backend Tunnel
+# 2. Start Backend Tunnel
 Write-Host "[*] Starting Cloudflare Tunnel for Backend..." -ForegroundColor Gray
 $backendLog = "$env:TEMP\cf-backend.log"
 Remove-Item $backendLog -Force -ErrorAction SilentlyContinue
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "& '$cloudflared' tunnel --url http://127.0.0.1:3000 --loglevel info 2>&1 | Tee-Object -FilePath '$backendLog'" -WindowStyle Minimized
 
-# 4. Poll for backend tunnel URL
+# 3. Poll for backend tunnel URL
 Write-Host "Waiting for backend tunnel..." -ForegroundColor Yellow
 $backendUrl = $null
 for ($i = 0; $i -lt 90 -and -not $backendUrl; $i++) {
@@ -114,22 +156,57 @@ for ($i = 0; $i -lt 90 -and -not $backendUrl; $i++) {
 Write-Host ""
 
 if (-not $backendUrl) {
-    Write-Host "[-] Backend tunnel failed. Check: $backendLog" -ForegroundColor Red
-    Read-Host "Press Enter to exit"
-    Exit
+    Write-Host "[-] Backend tunnel did not produce a public URL. Check the log: $backendLog" -ForegroundColor Red
+    if (Test-Path $backendLog) { Get-Content $backendLog -Tail 40 }
+    Read-Host "Press Enter to exit"; Exit
 }
 
-# 5. Start Frontend with backend tunnel URL injected
-Write-Host "[*] Starting Frontend (Port 5173)..." -ForegroundColor Gray
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$Host.UI.RawUI.WindowTitle='Vite Client'; `$env:VITE_API_BASE_URL='$backendUrl/api/v1'; npm run dev" -WorkingDirectory "client" -WindowStyle Minimized
+# Helper: ensure tunnel hostname has IPv4 DNS resolution via hosts file
+Function Add-HostEntryForTunnel {
+    param([string]$TunnelUrl)
+    $hostname = ($TunnelUrl -replace 'https://','' -replace '/.*','').Trim()
+    # Check if hostname already resolves to an IPv4 address
+    $hasIpv4 = $false
+    try { $records = [System.Net.Dns]::GetHostEntry($hostname); $hasIpv4 = ($records.AddressList | Where-Object { $_.AddressFamily -eq 'InterNetwork' }).Count -gt 0 } catch {}
+    if ($hasIpv4) { Write-Host "[+] DNS OK ($hostname resolves to IPv4)" -ForegroundColor Green; return }
+    # Only AAAA (IPv6) records — resolve trycloudflare.com for its IPv4 anycast IP
+    try {
+        $cfIpv4 = (Resolve-DnsName "trycloudflare.com" -Type A -ErrorAction Stop)[0].IPAddress
+        $hostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
+        $existing = Get-Content $hostsPath -ErrorAction SilentlyContinue
+        $entry = "$cfIpv4  $hostname  # E-Serbisyo tunnel (auto-added)"
+        if ($existing -match [regex]::Escape($hostname)) {
+            Write-Host "[+] Hosts entry already exists for $hostname" -ForegroundColor Green
+        } else {
+            Add-Content -Path $hostsPath -Value $entry
+            Write-Host "[+] Added hosts entry: $entry" -ForegroundColor Green
+            # Flush DNS cache
+            ipconfig /flushdns 2>$null | Out-Null
+        }
+    } catch {
+        Write-Host "[-] Could not add hosts entry: $_" -ForegroundColor Red
+        Write-Host "[-] Run this script AS ADMINISTRATOR to enable tunnel DNS fix" -ForegroundColor Yellow
+    }
+}
 
-# 6. Start Frontend Tunnel
+# Fix DNS for backend tunnel
+Add-HostEntryForTunnel -TunnelUrl $backendUrl
+
+# 4. Start Frontend (Port 5173)
+$clientEnv = Join-Path $projectRoot "client/.env"
+Set-EnvFileValue -FilePath $clientEnv -Key "VITE_API_BASE_URL" -Value "$backendUrl/api/v1"
+Write-Host "[+] Updated client/.env with VITE_API_BASE_URL=$backendUrl/api/v1" -ForegroundColor Green
+Write-Host "[*] Starting Frontend (Port 5173)..." -ForegroundColor Gray
+$clientDir = Join-Path $projectRoot "client"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:PATH='$nodeDir;'+`$env:PATH; `$Host.UI.RawUI.WindowTitle='Vite Client'; Set-Location '$clientDir'; npm run dev" -WindowStyle Minimized
+
+# 5. Start Frontend Tunnel
 Write-Host "[*] Starting Cloudflare Tunnel for Frontend..." -ForegroundColor Gray
 $frontendLog = "$env:TEMP\cf-frontend.log"
 Remove-Item $frontendLog -Force -ErrorAction SilentlyContinue
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "& '$cloudflared' tunnel --url http://127.0.0.1:5173 --loglevel info 2>&1 | Tee-Object -FilePath '$frontendLog'" -WindowStyle Minimized
 
-# 7. Poll for frontend tunnel URL
+# 6. Poll for frontend tunnel URL
 Write-Host "Waiting for frontend tunnel..." -ForegroundColor Yellow
 $frontendUrl = $null
 for ($i = 0; $i -lt 90 -and -not $frontendUrl; $i++) {
@@ -145,14 +222,31 @@ for ($i = 0; $i -lt 90 -and -not $frontendUrl; $i++) {
 }
 Write-Host ""
 
-# 8. Update server .env with frontend tunnel URL (for QR codes)
-if ($frontendUrl) {
-    $serverEnv = "server\.env"
-    (Get-Content $serverEnv) -replace 'VERIFICATION_BASE_URL=.*', "VERIFICATION_BASE_URL=$frontendUrl/verify" | Set-Content $serverEnv
-    Write-Host "[+] Updated server\.env VERIFICATION_BASE_URL = $frontendUrl/verify" -ForegroundColor Green
+if (-not $frontendUrl) {
+    Write-Host "[-] Frontend tunnel did not produce a public URL. Check the log: $frontendLog" -ForegroundColor Red
+    if (Test-Path $frontendLog) { Get-Content $frontendLog -Tail 40 }
+    Read-Host "Press Enter to exit"; Exit
 }
 
-# 9. Health Check
+# Fix DNS for frontend tunnel
+Add-HostEntryForTunnel -TunnelUrl $frontendUrl
+$frontendBaseUrl = $frontendUrl.TrimEnd('/')
+
+# 7. Update server .env and start backend with correct frontend URL
+$serverEnv = Join-Path $projectRoot "server/.env"
+Set-EnvFileValue -FilePath $serverEnv -Key "FRONTEND_BASE_URL" -Value $frontendBaseUrl
+Set-EnvFileValue -FilePath $serverEnv -Key "PUBLIC_FRONTEND_URL" -Value $frontendBaseUrl
+Set-EnvFileValue -FilePath $serverEnv -Key "VERIFICATION_BASE_URL" -Value "$frontendBaseUrl/verify"
+Write-Host "[+] Updated server/.env with frontend URL: $frontendBaseUrl" -ForegroundColor Green
+
+# 8. Start Backend
+Write-Host "[*] Starting Backend (Port 3000)..." -ForegroundColor Gray
+$serverDir = Join-Path $projectRoot "server"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:PATH='$nodeDir;'+`$env:PATH; `$Host.UI.RawUI.WindowTitle='Express API'; `$env:PORT='3000'; `$env:RUN_CRON='true'; `$env:FRONTEND_BASE_URL='$frontendBaseUrl'; `$env:PUBLIC_FRONTEND_URL='$frontendBaseUrl'; `$env:VERIFICATION_BASE_URL='$frontendBaseUrl/verify'; Set-Location '$serverDir'; npx nodemon server.js" -WindowStyle Minimized
+
+# 9. Health Check (wait for backend to boot)
+Write-Host "[*] Waiting for backend to start..." -ForegroundColor Gray
+Start-Sleep -Seconds 8
 $status = "OFFLINE"
 try {
     $res = Invoke-RestMethod -Uri "$backendUrl/api/v1/health" -Method Get -TimeoutSec 5
@@ -171,8 +265,8 @@ Write-Host "====================================================" -ForegroundCol
 Write-Host "Local Backend : http://localhost:3000" -ForegroundColor White
 Write-Host "Local Frontend: http://localhost:5173" -ForegroundColor White
 Write-Host "====================================================" -ForegroundColor Cyan
-Write-Host "API Base URL for frontend builds: $backendUrl/api/v1" -ForegroundColor Gray
-Write-Host "To shut down: Stop-Process -Name node,cloudflared -Force" -ForegroundColor Yellow
+Write-Host "API Base URL  : $backendUrl/api/v1" -ForegroundColor Gray
+Write-Host "To shut down  : Stop-Process -Name node,cloudflared -Force" -ForegroundColor Yellow
 Write-Host "====================================================" -ForegroundColor Cyan
 
 Read-Host "Press Enter to exit"

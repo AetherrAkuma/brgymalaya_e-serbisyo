@@ -3,7 +3,7 @@ import {
   Box, Paper, Typography, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, Button, Dialog, DialogTitle, DialogContent, 
   DialogActions, TextField, MenuItem, FormControlLabel, Switch, Stack, 
-  IconButton, CircularProgress, Alert, Tooltip, Divider
+  IconButton, CircularProgress, Alert, Tooltip, Divider, Card
 } from '@mui/material';
 
 import CampaignIcon from '@mui/icons-material/Campaign';

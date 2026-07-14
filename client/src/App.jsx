@@ -9,6 +9,7 @@ import Register from './pages/public/Register';
 import Home from './pages/public/Home';
 import ForgotPassword from './pages/public/ForgotPassword';
 import ResetPassword from './pages/public/ResetPassword';
+import VerifyEmail from './pages/public/VerifyEmail';
 import ResidentDashboard from './pages/resident/Dashboard';
 import RequestWizard from './pages/resident/RequestWizard';
 import MyRequests from './pages/resident/MyRequests';
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="verify/:hash?" element={<VerifyQR />} />
           <Route path="forgot-password" element={<ForgotPassword />} />
           <Route path="reset-password" element={<ResetPassword />} />
+          <Route path="verify-email" element={<VerifyEmail />} />
         </Route>
 
         {/* ============================== */}

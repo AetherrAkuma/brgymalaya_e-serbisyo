@@ -152,7 +152,8 @@ export default function Dashboard() {
     try {
       const payorName = `${selectedReqObj.first_name} ${selectedReqObj.last_name}`;
       await api.post(`/payments/exempt/${selectedPaymentReq}`, {
-        payor_name: payorName
+        payor_name: payorName,
+        or_number: paymentData.or_number || undefined
       });
       showSnackbar("Document exempted from fee successfully under RA 11261.", "success");
       setPaymentData({ or_number: '', amount_received: '' });
@@ -440,39 +441,66 @@ export default function Dashboard() {
                       ))}
                     </TextField>
 
-                    {/* OR Number & Cash Amount Received (Side-by-Side) */}
-                    <Grid container spacing={1.5}>
-                      <Grid size={{ xs: 12, sm: 6 }}>
-                        <TextField
-                          required
-                          fullWidth
-                          size="small"
-                          label="OR Number"
-                          value={paymentData.or_number}
-                          onChange={(e) => setPaymentData({ ...paymentData, or_number: e.target.value })}
-                          placeholder="e.g. OR-87265"
-                          variant="outlined"
-                        />
-                      </Grid>
-                      <Grid size={{ xs: 12, sm: 6 }}>
-                        <TextField
-                          required
-                          fullWidth
-                          size="small"
-                          type="number"
-                          label="Cash Received"
-                          value={paymentData.amount_received}
-                          onChange={(e) => setPaymentData({ ...paymentData, amount_received: e.target.value })}
-                          InputProps={{
-                            startAdornment: <InputAdornment position="start" sx={{ '& .MuiTypography-root': { fontSize: '0.8rem' } }}>₱</InputAdornment>
-                          }}
-                          variant="outlined"
-                        />
-                      </Grid>
-                    </Grid>
+                    {selectedReqObj && selectedReqObj.purpose && selectedReqObj.purpose.includes('[FIRST-TIME JOBSEEKER]') ? (
+                      <Box sx={{ p: 1.5, bgcolor: '#f0fdf4', borderRadius: 2, border: '1px solid #bbf7d0', mb: 1.5 }}>
+                        <Typography variant="body2" fontWeight="bold" color="success.main" sx={{ mb: 0.5 }}>
+                          <CheckCircleOutlineIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5 }} />
+                          Exempted under RA 11261
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          First-Time Jobseeker — no payment required.
+                        </Typography>
+                      </Box>
+                    ) : null}
 
-                    {/* Change calculator Box (Tighter) */}
-                    {selectedPaymentReq && (
+                    {selectedReqObj && selectedReqObj.purpose && selectedReqObj.purpose.includes('[FIRST-TIME JOBSEEKER]') ? (
+                      <Grid container spacing={1.5}>
+                        <Grid size={{ xs: 12 }}>
+                          <TextField
+                            required
+                            fullWidth
+                            size="small"
+                            label="OR Number"
+                            value={paymentData.or_number}
+                            onChange={(e) => setPaymentData({ ...paymentData, or_number: e.target.value })}
+                            placeholder="e.g. OR-87265"
+                            variant="outlined"
+                          />
+                        </Grid>
+                      </Grid>
+                    ) : (
+                      <Grid container spacing={1.5}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            required
+                            fullWidth
+                            size="small"
+                            label="OR Number"
+                            value={paymentData.or_number}
+                            onChange={(e) => setPaymentData({ ...paymentData, or_number: e.target.value })}
+                            placeholder="e.g. OR-87265"
+                            variant="outlined"
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            required
+                            fullWidth
+                            size="small"
+                            type="number"
+                            label="Cash Received"
+                            value={paymentData.amount_received}
+                            onChange={(e) => setPaymentData({ ...paymentData, amount_received: e.target.value })}
+                            InputProps={{
+                              startAdornment: <InputAdornment position="start" sx={{ '& .MuiTypography-root': { fontSize: '0.8rem' } }}>₱</InputAdornment>
+                            }}
+                            variant="outlined"
+                          />
+                        </Grid>
+                      </Grid>
+                    )}
+
+                    {selectedPaymentReq && !(selectedReqObj && selectedReqObj.purpose && selectedReqObj.purpose.includes('[FIRST-TIME JOBSEEKER]')) && (
                       <Paper 
                         elevation={0} 
                         sx={{ 
@@ -499,27 +527,24 @@ export default function Dashboard() {
                     )}
 
                     {selectedReqObj && selectedReqObj.purpose && selectedReqObj.purpose.includes('[FIRST-TIME JOBSEEKER]') ? (
-                      <Stack direction="row" spacing={1}>
+                      <Box sx={{ p: 1.5, bgcolor: '#f0fdf4', borderRadius: 2, border: '1px solid #bbf7d0' }}>
+                        <Typography variant="caption" fontWeight="bold" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                          <CheckCircleOutlineIcon sx={{ fontSize: 14 }} /> EXEMPTED — RA 11261
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
+                          First-Time Jobseeker. No payment required. Oath/Agreement presented.
+                        </Typography>
                         <Button
                           fullWidth
-                          variant="outlined"
+                          variant="contained"
                           color="success"
-                          disabled={encodingAction}
+                          disabled={!paymentData.or_number?.trim() || encodingAction}
                           onClick={handleProcessExemption}
                           sx={{ py: 1.2, fontWeight: 'bold', borderRadius: 2, textTransform: 'none' }}
                         >
                           {encodingAction ? 'Exempting...' : 'Exempt (RA 11261)'}
                         </Button>
-                        <Button
-                          fullWidth
-                          type="submit"
-                          variant="contained"
-                          disabled={!isPaymentFormValid() || encodingAction}
-                          sx={{ py: 1.2, fontWeight: 'bold', borderRadius: 2, textTransform: 'none' }}
-                        >
-                          {encodingAction ? 'Processing...' : 'Pay Cash'}
-                        </Button>
-                      </Stack>
+                      </Box>
                     ) : (
                       <Button
                         fullWidth

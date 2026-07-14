@@ -13,23 +13,26 @@ import VerifiedIcon from '@mui/icons-material/Verified';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import api from '../../utils/axios';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-// Dynamically load PDF.js from CDN to scan QR codes inside PDF files
-const loadPdfJs = () => {
-  return new Promise((resolve, reject) => {
-    if (window.pdfjsLib) {
-      resolve(window.pdfjsLib);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
-    script.onload = () => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-      resolve(window.pdfjsLib);
-    };
-    script.onerror = (err) => reject(err);
-    document.head.appendChild(script);
-  });
+const configurePdfWorker = () => {
+  if (!pdfjsWorker || typeof pdfjsWorker !== 'string') {
+    throw new Error('PDF.js worker asset URL is missing.');
+  }
+
+  GlobalWorkerOptions.workerSrc = pdfjsWorker;
+  return true;
+};
+
+// Use the locally installed PDF.js worker so PDF-based QR scanning works in browser builds without CDN/network issues.
+const loadPdfJs = async () => {
+  if (typeof getDocument !== 'function') {
+    throw new Error('PDF.js could not be loaded.');
+  }
+
+  configurePdfWorker();
+  return { getDocument, GlobalWorkerOptions };
 };
 
 // Helper to format date and time together
@@ -190,9 +193,19 @@ export default function VerifyQR() {
 
     try {
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        // Load PDF.js library dynamically
+        // Load PDF.js from the bundled local dependency
         const pdfjsLib = await loadPdfJs();
-        
+
+        if (!pdfjsLib?.getDocument) {
+          throw new Error('PDF.js is unavailable in this browser build.');
+        }
+
+        if (!pdfjsLib.GlobalWorkerOptions?.workerSrc) {
+          throw new Error('PDF.js worker is still not configured.');
+        }
+
+        console.info('PDF.js worker configured:', pdfjsLib.GlobalWorkerOptions.workerSrc);
+
         // Read file as ArrayBuffer
         const fileReader = new FileReader();
         const arrayBuffer = await new Promise((resolve, reject) => {
@@ -230,15 +243,29 @@ export default function VerifyQR() {
         const imageFile = new File([blob], 'extracted_pdf_page.png', { type: 'image/png' });
 
         const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
-        const decodedText = await scanner.scanFile(imageFile, true);
-        const parsedHash = extractHashFromUrl(decodedText);
-        verifyDocumentHash(parsedHash);
+        try {
+          const decodedText = await scanner.scanFile(imageFile, true);
+          const parsedHash = extractHashFromUrl(decodedText);
+          if (!parsedHash) {
+            throw new Error('No hash could be read from the uploaded document.');
+          }
+          verifyDocumentHash(parsedHash);
+        } finally {
+          try { await scanner.clear(); } catch (clearErr) { console.warn('Scanner clear warning:', clearErr); }
+        }
       } else {
         // Standard image scanning
         const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID);
-        const decodedText = await scanner.scanFile(file, true);
-        const parsedHash = extractHashFromUrl(decodedText);
-        verifyDocumentHash(parsedHash);
+        try {
+          const decodedText = await scanner.scanFile(file, true);
+          const parsedHash = extractHashFromUrl(decodedText);
+          if (!parsedHash) {
+            throw new Error('No hash could be read from the uploaded image.');
+          }
+          verifyDocumentHash(parsedHash);
+        } finally {
+          try { await scanner.clear(); } catch (clearErr) { console.warn('Scanner clear warning:', clearErr); }
+        }
       }
     } catch (err) {
       console.error("QR File Parsing Error:", err);
@@ -382,11 +409,11 @@ export default function VerifyQR() {
             <Stack spacing={2} direction={{ xs: 'column', sm: 'row' }}>
               <TextField
                 fullWidth
-                label="Verification Code / Reference URL"
+                label="Verification Hash / Reference Number"
                 variant="outlined"
                 value={hashInput}
                 onChange={(e) => setHashInput(e.target.value)}
-                placeholder="Enter document hash or verification URL"
+                placeholder="Enter the QR hash or the printed reference number"
                 required
               />
               <Button 
@@ -473,7 +500,9 @@ export default function VerifyQR() {
                     <Grid item xs={12} sm={6}>
                       <Typography variant="caption" color="text.secondary" fontWeight="bold">DATE ISSUED</Typography>
                       <Typography variant="body1" fontWeight="bold" color="#0f172a">
-                        {formatDateTime(verifyResult.details.issued_on)}
+                        {verifyResult.details.status === 'Issued' && verifyResult.details.issued_on
+                          ? formatDateTime(verifyResult.details.issued_on)
+                          : 'Not yet issued'}
                       </Typography>
                     </Grid>
                   </Grid>

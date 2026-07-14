@@ -142,7 +142,8 @@ export default function RequestsQueue() {
     try {
       const payorName = `${selectedReq.first_name} ${selectedReq.last_name}`;
       await api.post(`/payments/exempt/${selectedReq.request_id}`, {
-        payor_name: payorName
+        payor_name: payorName,
+        or_number: paymentData.or_number || undefined
       });
       handleCloseAll();
       fetchRequests();
@@ -491,57 +492,84 @@ export default function RequestsQueue() {
       {/* --- PAYMENT MODAL --- */}
       <Dialog open={paymentModalOpen} onClose={handleCloseAll} maxWidth="xs" fullWidth disableRestoreFocus PaperProps={{ sx: { borderRadius: 4 } }}>
         {selectedReq && (
-            <>
-                <DialogTitle sx={{ bgcolor: theme.palette.success.main, color: 'white', textAlign: 'center', fontWeight: '900' }}>
-                    ENCODE COLLECTION
-                </DialogTitle>
+          <>
+            <DialogTitle sx={{ bgcolor: theme.palette.success.main, color: 'white', textAlign: 'center', fontWeight: '900' }}>
+              {selectedReq.purpose && selectedReq.purpose.includes('[FIRST-TIME JOBSEEKER]') ? 'EXEMPTION — RA 11261' : 'ENCODE COLLECTION'}
+            </DialogTitle>
+            {selectedReq.purpose && selectedReq.purpose.includes('[FIRST-TIME JOBSEEKER]') ? (
+              <>
                 <DialogContent dividers>
-                    <Box sx={{ textAlign: 'center', mb: 4, mt: 2 }}>
-                        <Typography variant="caption" color="text.secondary" fontWeight="bold">TOTAL AMOUNT DUE</Typography>
-                        <Typography variant="h2" fontWeight="900" color="#b91c1c">₱{selectedReq.base_fee}</Typography>
-                    </Box>
-                    <Stack spacing={3}>
-                        <TextField 
-                            label="OR Number" fullWidth required autoFocus
-                            value={paymentData.or_number} onChange={(e) => setPaymentData({...paymentData, or_number: e.target.value})} 
-                            InputProps={{ startAdornment: <InputAdornment position="start"><NumbersOutlinedIcon color="primary"/></InputAdornment> }} 
-                        />
-                        <TextField 
-                            label="Amount Received" type="number" fullWidth required 
-                            value={paymentData.amount_received} onChange={(e) => setPaymentData({...paymentData, amount_received: e.target.value})} 
-                            InputProps={{ startAdornment: <InputAdornment position="start">₱</InputAdornment> }} 
-                        />
-                        
-                        <Paper elevation={0} sx={{ p: 2.5, bgcolor: changeDue >= 0 ? '#f0fdf4' : '#fef2f2', textAlign: 'center', border: '1px solid', borderColor: changeDue >= 0 ? '#bcf0da' : '#fecaca', borderRadius: 3 }}>
-                            <Typography variant="caption" color="text.secondary" fontWeight="bold">CHANGE TO RESIDENT</Typography>
-                            <Typography variant="h4" fontWeight="900" color={changeDue >= 0 ? "success.main" : "error.main"}>₱{changeDue.toFixed(2)}</Typography>
-                        </Paper>
-                    </Stack>
+                  <Box sx={{ textAlign: 'center', mb: 2, mt: 2, p: 2.5, bgcolor: '#f0fdf4', borderRadius: 3, border: '1px solid #bbf7d0' }}>
+                    <CheckCircleIcon sx={{ fontSize: 40, color: '#16a34a', mb: 1 }} />
+                    <Typography variant="h6" fontWeight="bold" color="success.main">Fee Exempted — RA 11261</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      This First-Time Jobseeker is exempt from all fees. The resident presented their signed Oath/Agreement.
+                    </Typography>
+                    <Chip label="No payment required" color="success" size="small" sx={{ mt: 2, fontWeight: 'bold' }} />
+                  </Box>
+                  <TextField
+                    required label="OR Number" fullWidth
+                    value={paymentData.or_number} onChange={(e) => setPaymentData({...paymentData, or_number: e.target.value})}
+                    InputProps={{ startAdornment: <InputAdornment position="start"><NumbersOutlinedIcon color="primary"/></InputAdornment> }}
+                    placeholder="e.g. OR-87265"
+                  />
                 </DialogContent>
                 <DialogActions sx={{ p: 3 }}>
-                    <Button onClick={handleCloseAll} color="inherit">Cancel</Button>
-                    <Button 
-                        variant="outlined" 
-                        color="success" 
-                        onClick={handleProcessExemption} 
-                        disabled={!!processingAction}
-                        startIcon={processingAction === 'exempt' ? <CircularProgress size={18} color="inherit" /> : null}
-                        sx={{ fontWeight: 'bold', mr: 'auto', borderRadius: 3 }}
-                    >
-                        {processingAction === 'exempt' ? 'Exempting...' : 'Exempt (RA 11261)'}
-                    </Button>
-                    <Button 
-                        variant="contained" color="success" size="large"
-                        onClick={handleProcessPayment} 
-                        disabled={changeDue < 0 || !paymentData.or_number || !!processingAction}
-                        startIcon={processingAction === 'payment' ? <CircularProgress size={20} color="inherit" /> : null}
-                        className={processingAction === 'payment' ? 'btn-loading' : ''}
-                        sx={{ fontWeight: 'bold', borderRadius: 3 }}
-                    >
-                        {processingAction === 'payment' ? 'Processing...' : 'Confirm Payment & Process'}
-                    </Button>
+                  <Button onClick={handleCloseAll} color="inherit">Cancel</Button>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="large"
+                    onClick={handleProcessExemption}
+                    disabled={!paymentData.or_number?.trim() || !!processingAction}
+                    startIcon={processingAction === 'exempt' ? <CircularProgress size={20} color="inherit" /> : null}
+                    sx={{ fontWeight: 'bold', borderRadius: 3, px: 4 }}
+                  >
+                    {processingAction === 'exempt' ? 'Exempting...' : 'Exempt (RA 11261)'}
+                  </Button>
                 </DialogActions>
-            </>
+              </>
+            ) : (
+              <>
+                <DialogContent dividers>
+                  <Box sx={{ textAlign: 'center', mb: 4, mt: 2 }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight="bold">TOTAL AMOUNT DUE</Typography>
+                    <Typography variant="h2" fontWeight="900" color="#b91c1c">₱{selectedReq.base_fee}</Typography>
+                  </Box>
+                  <Stack spacing={3}>
+                    <TextField
+                      label="OR Number" fullWidth required autoFocus
+                      value={paymentData.or_number} onChange={(e) => setPaymentData({...paymentData, or_number: e.target.value})}
+                      InputProps={{ startAdornment: <InputAdornment position="start"><NumbersOutlinedIcon color="primary"/></InputAdornment> }}
+                    />
+                    <TextField
+                      label="Amount Received" type="number" fullWidth required
+                      value={paymentData.amount_received} onChange={(e) => setPaymentData({...paymentData, amount_received: e.target.value})}
+                      InputProps={{ startAdornment: <InputAdornment position="start">₱</InputAdornment> }}
+                    />
+
+                    <Paper elevation={0} sx={{ p: 2.5, bgcolor: changeDue >= 0 ? '#f0fdf4' : '#fef2f2', textAlign: 'center', border: '1px solid', borderColor: changeDue >= 0 ? '#bcf0da' : '#fecaca', borderRadius: 3 }}>
+                      <Typography variant="caption" color="text.secondary" fontWeight="bold">CHANGE TO RESIDENT</Typography>
+                      <Typography variant="h4" fontWeight="900" color={changeDue >= 0 ? "success.main" : "error.main"}>₱{changeDue.toFixed(2)}</Typography>
+                    </Paper>
+                  </Stack>
+                </DialogContent>
+                <DialogActions sx={{ p: 3 }}>
+                  <Button onClick={handleCloseAll} color="inherit">Cancel</Button>
+                  <Button
+                    variant="contained" color="success" size="large"
+                    onClick={handleProcessPayment}
+                    disabled={changeDue < 0 || !paymentData.or_number || !!processingAction}
+                    startIcon={processingAction === 'payment' ? <CircularProgress size={20} color="inherit" /> : null}
+                    className={processingAction === 'payment' ? 'btn-loading' : ''}
+                    sx={{ fontWeight: 'bold', borderRadius: 3 }}
+                  >
+                    {processingAction === 'payment' ? 'Processing...' : 'Confirm Payment & Process'}
+                  </Button>
+                </DialogActions>
+              </>
+            )}
+          </>
         )}
       </Dialog>
 
