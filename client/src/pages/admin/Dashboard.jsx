@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { 
   Box, Grid, Paper, Typography, CircularProgress, 
   Stack, Chip, Button, Table, TableBody, TableCell, 
-  TableContainer, TableHead, TableRow, TextField, MenuItem, InputAdornment, Divider, IconButton
+  TableContainer, TableHead, TableRow, TextField, MenuItem, InputAdornment, Divider, IconButton,
+  Card, CardContent, LinearProgress
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
@@ -32,6 +33,10 @@ import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import FilePresentIcon from '@mui/icons-material/FilePresent';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import MemoryIcon from '@mui/icons-material/Memory';
+import StorageIcon from '@mui/icons-material/Storage';
+import PeopleIcon from '@mui/icons-material/People';
+import SpeedIcon from '@mui/icons-material/Speed';
 
 import api from '../../utils/axios';
 import { useSnackbar } from '../../context/SnackbarContext.jsx';
@@ -274,6 +279,68 @@ export default function Dashboard() {
       </Box>
     );
   }
+
+  const SystemStatusSection = () => {
+    const sys = stats?.system;
+    if (!sys) return null;
+    const formatUptime = (sec) => {
+      const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+      return `${d}d ${h}h ${m}m`;
+    };
+    const bytesToMB = (b) => (b / (1024 * 1024)).toFixed(1);
+    const mem = sys.memoryUsage || {};
+
+    return (
+      <Paper elevation={0} sx={{ mt: 4, p: 3, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: 'white' }}>
+        <Typography variant="h6" fontWeight="800" color="#0f172a" sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <SpeedIcon /> Performance & System Status
+        </Typography>
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {[
+            { label: 'Uptime', value: formatUptime(sys.uptime), icon: <SpeedIcon />, color: '#2563eb' },
+            { label: 'DB Tables', value: sys.dbTables ?? 'N/A', icon: <StorageIcon />, color: '#10b981' },
+            { label: 'Residents', value: sys.totalResidents ?? 'N/A', icon: <PeopleIcon />, color: '#f59e0b' },
+            { label: 'Officials', value: sys.totalOfficials ?? 'N/A', icon: <PeopleIcon />, color: '#8b5cf6' },
+            { label: 'Activity (24h)', value: sys.activity24h ?? 'N/A', icon: <StorageIcon />, color: '#ef4444' },
+            { label: 'Node.js', value: sys.nodeVersion || 'N/A', icon: <MemoryIcon />, color: '#6366f1' },
+          ].map((item, i) => (
+            <Grid size={{ xs: 6, sm: 4, md: 2 }} key={i}>
+              <Card variant="outlined" sx={{ borderRadius: 2, textAlign: 'center', py: 1.5 }}>
+                <Box sx={{ color: item.color, mb: 0.5 }}>{item.icon}</Box>
+                <Typography variant="h6" fontWeight="800">{item.value}</Typography>
+                <Typography variant="caption" color="text.secondary">{item.label}</Typography>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+        {mem.heapTotal && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="subtitle2" fontWeight="700" gutterBottom>Resource Usage</Typography>
+            <Stack spacing={1}>
+              {mem.rss && (
+                <Box>
+                  <Typography variant="caption">RSS — {bytesToMB(mem.rss)} MB</Typography>
+                  <LinearProgress variant="determinate" value={Math.min((mem.rss / (mem.heapTotal * 2)) * 100, 100)} sx={{ height: 8, borderRadius: 4, mt: 0.5 }} />
+                </Box>
+              )}
+              <Box>
+                <Typography variant="caption">Heap — {bytesToMB(mem.heapUsed)} MB / {bytesToMB(mem.heapTotal)} MB</Typography>
+                <LinearProgress variant="determinate" value={Math.min((mem.heapUsed / mem.heapTotal) * 100, 100)} sx={{ height: 8, borderRadius: 4, mt: 0.5 }} />
+              </Box>
+            </Stack>
+          </Box>
+        )}
+        <Box>
+          <Typography variant="subtitle2" fontWeight="700" gutterBottom>Database Health</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Chip label={sys.dbStatus === 'connected' ? 'Connected' : 'Disconnected'} color={sys.dbStatus === 'connected' ? 'success' : 'error'} size="small" sx={{ fontWeight: 'bold' }} />
+            <Typography variant="body2" color="text.secondary">{sys.dbTables} tables</Typography>
+            {sys.dbError && <Typography variant="caption" color="error">{sys.dbError}</Typography>}
+          </Box>
+        </Box>
+      </Paper>
+    );
+  };
 
   // =========================================================================
   // --- 1. TREASURER CUSTOMIZED VIEW ---
@@ -648,6 +715,8 @@ export default function Dashboard() {
           </Table>
         </TableContainer>
       </Paper>
+
+      <SystemStatusSection />
 
       <style>
         {`
@@ -1170,6 +1239,8 @@ export default function Dashboard() {
           </Grid>
         </Paper>
 
+        <SystemStatusSection />
+
         <style>
           {`
             @keyframes fadeIn {
@@ -1457,6 +1528,8 @@ export default function Dashboard() {
           </Paper>
         </Grid>
       </Grid>
+
+      <SystemStatusSection />
 
       <style>
         {`

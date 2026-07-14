@@ -1667,6 +1667,28 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, roleGuard(['Admin', 'Captain
             WHERE account_status = 'Pending'
         `);
 
+        // 7. System health info
+        let dbStatus = 'connected';
+        let tableCount = 0;
+        let dbError = null;
+        try {
+            const [tables] = await db.query('SHOW TABLES');
+            tableCount = tables.length;
+        } catch (e) {
+            dbStatus = 'disconnected';
+            dbError = e.message;
+        }
+
+        // 8. Resident / Official counts
+        const [residentCount] = await db.query('SELECT COUNT(*) as c FROM tbl_Residents');
+        const [officialCount] = await db.query('SELECT COUNT(*) as c FROM tbl_BarangayOfficials');
+
+        // 9. Activity in last 24h
+        const [recentActivity] = await db.query(`
+            SELECT COUNT(*) as c FROM tbl_AuditLogs
+            WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        `);
+
         res.status(200).json({ 
             status: 'success', 
             data: {
@@ -1682,7 +1704,19 @@ app.get('/api/v1/admin/dashboard-stats', verifyJWT, roleGuard(['Admin', 'Captain
                 documentDemand: docDemand,
                 trendData: trend,
                 recentPayments: recentPayments,
-                pendingResidents: Number(resStats[0].pending_residents || 0)
+                pendingResidents: Number(resStats[0].pending_residents || 0),
+                system: {
+                    uptime: Math.floor(process.uptime()),
+                    nodeVersion: process.version,
+                    platform: process.platform,
+                    memoryUsage: process.memoryUsage(),
+                    dbStatus,
+                    dbTables: tableCount,
+                    dbError,
+                    totalResidents: Number(residentCount[0].c || 0),
+                    totalOfficials: Number(officialCount[0].c || 0),
+                    activity24h: Number(recentActivity[0].c || 0)
+                }
             }
         });
     } catch (error) {

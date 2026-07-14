@@ -36,3 +36,4 @@ server/uploads/*
 
 # Cloudflare Tunnel binary (place in root)
 cloudflared.exe
+caddy.exe
